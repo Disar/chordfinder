@@ -1,0 +1,4 @@
+/target
+/gen
+/dist
+/.claude/settings.local.json

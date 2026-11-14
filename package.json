@@ -1,0 +1,12 @@
+{
+  "name": "chordfinder",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "icon": "node scripts/make-icon.js",
+    "dev": "cargo run",
+    "build": "cargo build --release"
+  }
+}

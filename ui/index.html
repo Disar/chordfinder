@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chordfinder</title>
+<link rel="stylesheet" href="style.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+  <aside class="panel">
+    <header class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>Chordfinder</h1>
+        <p>Progressions from music theory</p>
+      </div>
+    </header>
+
+    <section>
+      <h2>Style</h2>
+      <select id="style" class="select" aria-label="Style"></select>
+      <p class="style-blurb" id="styleBlurb"></p>
+    </section>
+
+    <section>
+      <h2>Root note</h2>
+      <div class="piano" id="piano"></div>
+    </section>
+
+    <section>
+      <h2>Mode</h2>
+      <div class="modes" id="modes"></div>
+    </section>
+
+    <section>
+      <h2>Scale</h2>
+      <div class="scale" id="scale"></div>
+    </section>
+
+    <details class="settings" id="chordOpts">
+      <summary>Chords</summary>
+
+      <section>
+        <h2>Root chord</h2>
+        <div class="chips" id="modifiers"></div>
+      </section>
+
+      <section>
+        <h2>Chord colour</h2>
+        <div class="seg" id="color">
+          <button data-color="triad">Triads</button>
+          <button data-color="seventh">7th chords</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Borrowed chords</h2>
+        <div class="seg" id="borrowed">
+          <button data-borrow="0">Off</button>
+          <button data-borrow="1">Branch with borrowed</button>
+        </div>
+      </section>
+    </details>
+
+    <details class="settings" id="settings">
+      <summary>Settings</summary>
+
+      <section>
+        <h2>Return to root</h2>
+        <div class="seg" id="returnStyle">
+          <button data-ret="line">Arrow to root</button>
+          <button data-ret="node">R node</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Chord length</h2>
+        <div class="seg" id="length">
+          <button data-len="phrase" title="2 beats per chord, ending back on the root">2 beats</button>
+          <button data-len="loop" title="1 bar per chord, padded to 4 or 8 bars, loops seamlessly">1 bar (loop)</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>View</h2>
+        <div class="seg" id="density">
+          <button data-compact="0">Detailed</button>
+          <button data-compact="1">Compact</button>
+        </div>
+      </section>
+    </details>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div class="title">
+        <h2 id="keyTitle"></h2>
+        <p id="keyFeel"></p>
+      </div>
+      <div class="legend">
+        <span><svg width="26" height="10"><path d="M1 5h18" class="lg-edge"/><path d="M18 1l6 4-6 4z" class="lg-head"/></svg>next chord</span>
+        <span id="lgLine"><svg width="26" height="12"><path d="M24 2v6H4" class="lg-ret"/><path d="M5 4l-4 4 4 4z" class="lg-rethead"/></svg>resolves to root</span>
+        <span id="lgNode"><svg width="18" height="18"><circle cx="9" cy="9" r="7.5" class="lg-badge"/><text x="9" y="9" dy=".35em" text-anchor="middle" class="lg-badge-t">R</text></svg>resolves to root</span>
+        <span title="Chord borrowed from a parallel mode"><svg width="22" height="14"><rect x="1" y="1" width="20" height="12" rx="3" class="lg-borrow"/></svg>borrowed</span>
+        <span><svg width="14" height="16"><path d="M3 1v14" class="lg-bar"/><path d="M9 1v14" class="lg-bar thick"/></svg>ends here</span>
+        <span><svg width="26" height="12"><path d="M1 9C10 9 14 3 22 3" class="lg-hint"/><path d="M19 0l5 3-5 3" class="lg-hint" style="stroke-dasharray:none"/></svg>could continue</span>
+        <span class="hint">Click a chord to hear it · right-click to play its progression · Ctrl + wheel to zoom</span>
+      </div>
+    </div>
+
+    <div class="canvas" id="canvas"><svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg></div>
+
+    <footer class="detail" id="detail"></footer>
+  </main>
+</body>
+</html>

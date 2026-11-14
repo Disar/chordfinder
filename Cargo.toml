@@ -1,0 +1,27 @@
+[package]
+name = "chordfinder"
+version = "0.1.0"
+description = "A fast native chord progression explorer"
+license = "MIT"
+edition = "2021"
+rust-version = "1.77.2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+# Small, fast release binary.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# drag: native file drag-out (MIDI into a DAW).
+# windows-sys: colours the Windows 11 title bar to match the UI.
+[target.'cfg(windows)'.dependencies]
+drag = "2"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
