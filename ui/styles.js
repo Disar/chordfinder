@@ -166,6 +166,50 @@ export const GENRE_STYLES = [
     },
   },
   {
+    id: 'ska', name: 'Ska', blurb: 'Offbeat skank, rocksteady and 2 Tone',
+    defaults: { color: 'triad', bpm: 140, length: 'loop' },
+    library: {
+      ionian: [
+        p('Upbeat, skanking', 'I–IV–V ska', ['IV', 'V']),
+        p('Sunny, carefree', 'I–IV–I–V', ['IV', 'I', 'V']),
+        p('Bouncy, two-chord', 'I–V skank', ['V']),
+        p('Sweet, rocksteady', 'I–vi–IV–V', ['vi', 'IV', 'V']),
+        p('Jazzy, Jamaican', 'I–vi–ii–V', ['vi', 'ii7', 'V7']),
+        p('Lively, dancehall', 'I–ii–V', ['ii', 'V']),
+      ],
+      aeolian: [
+        p('Dark, 2 Tone', 'i–♭VII skank', ['bVII']),
+        p('Defiant, marching', 'i–♭VII–♭VI–♭VII', ['bVII', 'bVI', 'bVII']),
+        p('Brooding, urban', 'i–iv–v', ['iv', 'v']),
+        p('Haunted, eerie', 'i–♭VI–V', ['bVI', 'V']),
+      ],
+      dorian: [
+        p('Cool, minor ska', 'i–IV vamp', ['IV']),
+        p('Swaying, soulful', 'i–♭VII–IV', ['bVII', 'IV']),
+      ],
+    },
+  },
+  {
+    id: 'skapunk', name: 'Ska-punk', blurb: 'Fast punk changes with offbeat upstrokes',
+    defaults: { color: 'triad', bpm: 180, length: 'loop' },
+    library: {
+      ionian: [
+        p('Fast, upbeat', 'I–IV–V punk', ['IV', 'V']),
+        p('Snotty, garage', 'I–IV–I–V', ['IV', 'I', 'V']),
+        p('Anthemic, skate-punk', 'I–V–vi–IV', ['V', 'vi', 'IV']),
+        p('Hyper, singalong', 'I–V–IV', ['V', 'IV']),
+        p('Bouncy, offbeat', 'I–vi–IV–V', ['vi', 'IV', 'V']),
+        p('Cocky, swaggering', 'I–♭VII–IV', ['bVII', 'IV']),
+      ],
+      aeolian: [
+        p('Angry, fast', 'i–♭VI–♭VII', ['bVI', 'bVII']),
+        p('Defiant, punk', '♭VI–♭III–♭VII loop', ['bVI', 'bIII', 'bVII']),
+        p('Aggressive, chugging', 'i–♭VII–♭VI–♭VII', ['bVII', 'bVI', 'bVII']),
+        p('Tense, driving', 'i–iv–v', ['iv', 'v']),
+      ],
+    },
+  },
+  {
     id: 'blues', name: 'Blues', blurb: '12-bar and 8-bar forms with dominant 7ths',
     defaults: { color: 'seventh', bpm: 90, length: 'loop' },
     library: {

@@ -63,7 +63,7 @@ npm run icon             # regenerate icons
   Every template must add at least one new node or `buildTree` drops it —
   so a shorter progression must come *before* a longer one that extends it
   (`tests/styles.test.js` fails with "progression(s) hidden" otherwise).
-- **Styles** (dropdown at top of panel): Theory + 13 genres. A style only
+- **Styles** (dropdown at top of panel): Theory + 15 genres. A style only
   lists the modes it uses; others are dimmed. Switching style applies its
   defaults and jumps to its first library mode if needed. Progressions are
   hand-curated, real genre staples — keep it that way.
