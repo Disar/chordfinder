@@ -1,7 +1,13 @@
 import { MODES, MODIFIERS, MODE_ABBR, ROOT_LABELS, STYLES, styleById, styleModes, suggest } from './theory.js';
 import { buildTree, layout } from './graph.js';
-import { playChord, playSequence, stop } from './audio.js';
-import { progressionToMidi, midiFileName } from './midi.js';
+import { playChord, playSequence, playNote, playLine, playAlong, playOver, stop } from './audio.js';
+import { DRILLS, drillById, makeQuestion, isRight, record, accuracy, ready, emptyStats } from './quiz.js';
+import { progressionToMidi, midiFileName, melodyToMidi, GM_SAX } from './midi.js';
+import { INSTRUMENTS, REGISTERS, SCALES, SAX_RANGE, hornView, formatNote, solfa, degreeLabel, chordLayer, chordSymbol, guideLine, octaveOf } from './horn.js';
+import { keySignature, layoutStaff, STAFF } from './staff.js';
+import { KEYS, DIAGRAM, fingeringsFor } from './fingering.js';
+import { startMic, stopMic, micOn } from './mic.js';
+import { freqOf } from './pitch.js';
 
 const PALETTE = ['#ffb454', '#7c8cff', '#4cd99a', '#ff7a90', '#4cc3f5', '#c792ea', '#f5d76e',
   '#5fe0c8', '#ff9d5c', '#9ccc65', '#f78fb3', '#82aaff', '#e6a26a', '#b4a7ff', '#6fd3a0', '#ffcb6b'];
@@ -23,7 +29,11 @@ const loadSaved = () => {
 const state = Object.assign(
   { rootPc: 0, modeId: 'ionian', modifier: 'triad', color: 'triad', selected: 0, bpm: 96, zoom: 1,
     returnStyle: 'line', compact: true, borrowed: false, chordsOpen: true, settingsOpen: false,
-    styleId: 'theory', length: 'phrase' },
+    styleId: 'theory', length: 'phrase',
+    // Sax view
+    view: 'chords', instrument: 'alto', pitch: 'written', hornScale: 'mode', names: 'letters', solfa: false, minorDo: 'do',
+    bars: 1, guideLine: false, show: 'both', underNames: true, strip: true,
+    practice: false, drill: 'degree', levels: { degree: 0, tone: 0, read: 0 } },
   loadSaved(),
   { v: STATE_VERSION },
 );
@@ -49,7 +59,11 @@ function renderPiano() {
 }
 
 function renderStatic() {
-  $('style').innerHTML = STYLES.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  // Styles with a `group` (e.g. video game) go under their own heading.
+  const opt = (s) => `<option value="${s.id}">${esc(s.name)}</option>`;
+  const groups = [...new Set(STYLES.filter((s) => s.group).map((s) => s.group))];
+  $('style').innerHTML = STYLES.filter((s) => !s.group).map(opt).join('')
+    + groups.map((g) => `<optgroup label="${esc(g)}">${STYLES.filter((s) => s.group === g).map(opt).join('')}</optgroup>`).join('');
   $('style').onchange = (e) => update({ styleId: e.target.value });
   renderPiano();
   $('modes').innerHTML = MODES.map((m) =>
@@ -66,6 +80,8 @@ function renderStatic() {
   $('borrowed').onclick = (e) => { const b = e.target.closest('[data-borrow]'); if (b) update({ borrowed: b.dataset.borrow === '1' }); };
   $('length').onclick = (e) => { const b = e.target.closest('[data-len]'); if (b) update({ length: b.dataset.len }); };
   $('density').onclick =(e) => { const b = e.target.closest('[data-compact]'); if (b) update({ compact: b.dataset.compact === '1' }); };
+  $('view').onclick = (e) => { const b = e.target.closest('[data-view]'); if (b) update({ view: b.dataset.view }); };
+  wireHorn();
 }
 
 function markActive() {
@@ -75,8 +91,9 @@ function markActive() {
   $('styleBlurb').textContent = style.blurb;
   document.querySelectorAll('#modes [data-mode]').forEach((b) => {
     b.classList.toggle('on', b.dataset.mode === state.modeId);
-    // Modes the style has no progressions for are dimmed and can't be picked.
-    const na = !usable.includes(b.dataset.mode);
+    // Modes the style has no progressions for are dimmed and can't be picked
+    // (the sax view only needs the scale, so every mode is open there).
+    const na = state.view !== 'sax' && !usable.includes(b.dataset.mode);
     b.disabled = na;
     b.classList.toggle('na', na);
     b.title = na ? `Not used in the ${style.name} style` : '';
@@ -87,6 +104,7 @@ function markActive() {
   document.querySelectorAll('#returnStyle [data-ret]').forEach((b) => b.classList.toggle('on', b.dataset.ret === state.returnStyle));
   document.querySelectorAll('#borrowed [data-borrow]').forEach((b) => b.classList.toggle('on', (b.dataset.borrow === '1') === state.borrowed));
   document.querySelectorAll('#density [data-compact]').forEach((b) => b.classList.toggle('on', (b.dataset.compact === '1') === state.compact));
+  document.querySelectorAll('#view [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === state.view));
 }
 
 function renderScale(s) {
@@ -266,7 +284,7 @@ function renderDetail() {
     </div>`;
   showNow(nowChord);
   $('play').onclick = () => (playing ? halt() : playBranch(b));
-  wireMidiDrag($('midi'), b);
+  wireMidiDrag($('midi'), () => midiFor(b));
   const cont = $('cont');
   if (cont) cont.onclick = () => {
     if (b.next.home) return sound(t);
@@ -438,13 +456,14 @@ function flashMidi(btn, text, cls) {
   setTimeout(() => { btn.classList.remove(cls); delete btn.dataset.msg; }, 2200);
 }
 
-function wireMidiDrag(btn, b) {
+/** Makes `btn` drag out the MIDI file that build() returns ({ name, bytes }). */
+function wireMidiDrag(btn, build) {
   const tauri = window.__TAURI__?.core;
   if (!tauri) {
     // Plain browser: let Chromium drag the file out itself (drops onto the desktop).
     btn.draggable = true;
     btn.ondragstart = (e) => {
-      const { name, bytes } = midiFor(b);
+      const { name, bytes } = build();
       const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/midi' }));
       e.dataTransfer.setData('DownloadURL', `audio/midi:${name}:${url}`);
       e.dataTransfer.effectAllowed = 'copy';
@@ -462,7 +481,7 @@ function wireMidiDrag(btn, b) {
     const move = (ev) => {
       if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
       done();
-      const { name, bytes } = midiFor(b);
+      const { name, bytes } = build();
       btn.classList.add('dragging');
       tauri.invoke('drag_midi', { name, bytes: Array.from(bytes) })
         .catch((err) => { console.error(err); flashMidi(btn, 'Drag failed', 'error'); })
@@ -542,6 +561,956 @@ function playBranch(b) {
   }, halt);
 }
 
+// ------------------------------------------------------------ sax view
+
+// What the grid shows: null = the scale, else an index into the progression
+// (0 = root chord). Follows the backing track while it plays.
+let hornFocus = null;
+let linePlaying = false, alongPlaying = false;
+
+const hornModel = (chord = null) => hornView({
+  instrumentId: state.instrument, pitch: state.pitch, rootPc: state.rootPc, modeId: state.modeId,
+  scaleId: state.hornScale, chord,
+});
+
+const modeLabel = (m) => m.name + (m.alias ? ` (${m.alias})` : '');
+const fnName = { R: 'root', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', 6: '6th', 7: '7th', 9: '9th' };
+
+/** Segmented control bound to a state key; values are compared as strings. */
+const seg = (key, opts) => `<div class="seg" data-set="${key}">${opts.map(([v, label, tip]) =>
+  `<button data-v="${v}" class="${String(state[key]) === String(v) ? 'on' : ''}"${tip ? ` title="${esc(tip)}"` : ''}>${esc(label)}</button>`).join('')}</div>`;
+
+/** The selected progression in the sax view: concert chords (root chord
+ *  first), each re-spelled in the shown pitch, and its guide-tone line. */
+function hornProgression() {
+  const b = selectedBranch();
+  const chords = [model.s.tonic, ...b.chords];
+  const h = hornModel();
+  const layers = chords.map((c) => chordLayer(c, model.s.key, h.key));
+  return { b, chords, layers, line: guideLine(layers, h.inst, state.pitch) };
+}
+
+/** Bars per chord for the play-along, the last chord held so the loop fills
+ *  whole 4-chord phrases. */
+function alongBeats(n) {
+  const beats = Array.from({ length: n }, () => 4 * state.bars);
+  beats[n - 1] += (Math.ceil(n / 4) * 4 - n) * 4 * state.bars;
+  return beats;
+}
+
+function renderHorn() {
+  const h = hornModel(), inst = h.inst, written = state.pitch === 'written';
+  const nm = (n) => formatNote(n.letter, n.acc, state.names);
+  const p = hornProgression();
+  if (hornFocus !== null && hornFocus >= p.chords.length) hornFocus = null;
+
+  // Title: the key in the pitch shown, the other pitch underneath.
+  // The title names the scale chosen with the scale chips; with a soloing
+  // scale (pentatonic, blues) the key it belongs to goes underneath.
+  const solo = h.scale.id !== 'mode';
+  const pitchTag = written ? 'written' : 'concert';
+  $('keyTitle').textContent = solo
+    ? `${inst.name} — ${nm(h.tonic)} ${h.scale.name.toLowerCase()} (${pitchTag})`
+    : `${inst.name} — ${nm(h.key)} ${modeLabel(h.mode)} (${pitchTag})`;
+  const keyLine = solo ? `Key: ${nm(h.key)} ${h.mode.name}. ` : '';
+  $('keyFeel').textContent = keyLine + (written
+    ? `Concert ${nm(h.otherKey)} ${h.mode.name}. The ${inst.name.toLowerCase()} is in ${inst.key}: it sounds ${inst.interval} lower than written.`
+    : `Written ${nm(h.otherKey)} ${h.mode.name} for ${inst.name.toLowerCase()} (in ${inst.key}: sounds ${inst.interval} lower than written).`);
+  $('keyFeel').title = $('keyFeel').textContent; // the line is cut off when space is short
+
+  const branches = model.tree.branches.map((b) =>
+    `<option value="${b.id}"${b.id === p.b.id ? ' selected' : ''}>${esc(b.mood)} — ${esc(b.name)}</option>`).join('');
+  const chips = p.layers.map((l, i) =>
+    `<button class="hchord${i === 0 ? ' root' : ''}${lent(p.chords[i]) ? ' borrowed' : ''}" data-ci="${i}" title="${esc(chordTitle(p.chords[i]))}">
+      <b>${esc(chordSymbol(l, state.names))}</b><small>${esc(p.chords[i].roman)}</small></button>`).join('<span class="arrow">→</span>');
+  const ending = p.b.end === 'resolve' ? '<span class="arrow" title="Resolves to the root">↺</span>' : '<span class="end" title="Ends here">‖</span>';
+  const triadHint = state.guideLine && state.color === 'triad'
+    ? `<span class="hhint">Triads have no 7th, so the line uses 3rds and roots. <button class="link" id="use7">Use 7th chords</button></span>` : '';
+
+  // Header: instrument, pitch and the display options (a dropdown panel).
+  $('saxbar').innerHTML = `
+    ${seg('practice', [[false, 'Explore'], [true, 'Practice', 'Ear-training and reading drills']])}
+    <select id="inst" class="select" aria-label="Instrument">${INSTRUMENTS.map((i) =>
+      `<option value="${i.id}"${i.id === inst.id ? ' selected' : ''}>${esc(i.name)} (${i.key})</option>`).join('')}</select>
+    ${seg('pitch', [['written', 'Written', 'What the player reads'], ['concert', 'Concert', 'What sounds: piano pitch']])}
+    <div class="hoptwrap">
+      <button class="hoptbtn${optsOpen ? ' open' : ''}" id="hoptbtn" aria-expanded="${optsOpen}">Options ▾</button>
+      <div class="hopts" id="hopts"${optsOpen ? '' : ' hidden'}>
+        <div class="hfield"><span>Note names</span>${seg('names', [['letters', 'C D E'], ['dutch', 'Cis Bes', 'Dutch: Cis, Bes, Es, As'], ['fixed', 'Do Re Mi', 'Fixed do: Do is always C']])}</div>
+        <div class="hfield"><span>Movable do</span>${seg('solfa', [[false, 'Off'], [true, 'On', 'Syllables by scale degree: Do is the key’s tonic']])}</div>
+        ${state.solfa ? `<div class="hfield"><span>Minor keys</span>${seg('minorDo', [['do', 'Do-based', 'Minor tonic is Do (♭3 = Me)'], ['la', 'La-based', 'Minor tonic is La']])}</div>` : ''}
+        <div class="hfield"><span>Show</span>${seg('show', [['both', 'Staff + grid'], ['staff', 'Staff'], ['grid', 'Grid']])}</div>
+        <div class="hfield"><span>Names under notes</span>${seg('underNames', [[true, 'On'], [false, 'Off']])}</div>
+        <div class="hfield"><span>Fingering strip</span>${seg('strip', [[true, 'On', 'Small fingering charts under the scale staff'], [false, 'Off']])}</div>
+      </div>
+    </div>`;
+  $('inst').onchange = (e) => update({ instrument: e.target.value });
+
+  $('horn').innerHTML = `
+    <div class="quiz" id="hquiz"></div>
+    <div class="hprog">
+      <select id="hbranch" class="select" aria-label="Progression" title="Progression">${branches}</select>
+      <div class="hchords" id="hchords">
+        <span class="chiplabel" title="The notes to improvise with: the key's full scale, or a smaller pentatonic or blues set">Solo with</span>
+        <span class="scalechips">${SCALES.map((s) => `<button class="hchord scalechip" data-ci="-1" data-scale="${s.id}"
+          title="Show the ${esc(s.id === 'mode' ? `${h.mode.name} scale` : s.name.toLowerCase())}">${esc(s.id === 'mode' ? h.mode.name : s.short ?? s.name)}</button>`).join('')}</span>
+        <span class="sep"></span>${chips}${ending}
+      </div>
+    </div>
+    <div class="hplay">
+      <button class="play" id="halong" title="Count-in, then the progression on a loop · Space">${alongPlaying ? '■ Stop' : '▶ Play along'}</button>
+      <button class="mic${micOn() ? ' on' : ''}" id="hmic" title="Tuner: listens to your sax. Nothing is recorded or saved.">${micOn() ? '● Listening' : '🎤 Listen'}</button>
+      <div class="hfield inline"><span>Guide-tone line</span>${seg('guideLine', [[false, 'Off'], [true, 'On', 'Play and show a smooth line through each chord’s 3rd and 7th']])}</div>
+      <div class="hfield inline"><span>Bars per chord</span>${seg('bars', [[1, '1'], [2, '2']])}</div>
+      <label class="tempo">Tempo <input id="hbpm" type="range" min="50" max="180" value="${state.bpm}"> <span id="hbpmv">${state.bpm}</span></label>
+      <button class="mic" id="hprint" title="One page: the scale with fingerings, chord tones for each chord, and the lead sheet. Print it or save it as a PDF.">🖨 Practice sheet</button>
+      ${triadHint}
+    </div>
+    <div id="hline"></div>
+    <div id="hfocus"></div>
+    <div class="hmid">
+      <div class="staffbox tunerbox" id="htuner"${micOn() || micError ? '' : ' hidden'}></div>
+      <div class="hstaves" id="hstaves"${state.show === 'grid' ? ' hidden' : ''}></div>
+      <div class="staffbox fingerbox" id="hfinger"></div>
+    </div>
+    <div class="hgrid" id="hgrid"${state.show === 'staff' ? ' hidden' : ''}></div>
+    <div class="hlegend" id="hlegend"></div>`;
+  $('hbranch').onchange = (e) => {
+    stopHorn();
+    state.selected = +e.target.value;
+    hornFocus = null;
+    save();
+    renderDetail();
+    renderHorn();
+  };
+  $('hbpm').oninput = (e) => { state.bpm = +e.target.value; $('hbpmv').textContent = state.bpm; save(); };
+  const use7 = $('use7');
+  if (use7) use7.onclick = () => update({ color: 'seventh' });
+  $('horn').classList.toggle('practicing', !!state.practice);
+  if (state.practice) renderQuiz();
+  renderFocus(p);
+}
+
+/** The part that follows the focused chord: guide-line chips, the scale or
+ *  "over this chord" panel, the grid and its legend. */
+function renderFocus(p = hornProgression()) {
+  const chord = hornFocus === null ? null : p.chords[hornFocus];
+  const h = hornModel(chord);
+  const nm = (n) => formatNote(n.letter, n.acc, state.names);
+  // Movable do: on the scale view Do is the scale's tonic; over a chord it
+  // stays the key's tonic, which is what shows the chord's function.
+  const syl = (n) => (chord
+    ? solfa(n, h.keyTonic, { minor: h.mode.tonic !== 'I', la: state.minorDo === 'la' })
+    : solfa(n, h.tonic, { minor: h.minor, la: state.minorDo === 'la' }));
+  const lineNote = state.guideLine && hornFocus !== null ? p.line[hornFocus] : null;
+
+  document.querySelectorAll('#hchords .hchord').forEach((el) => {
+    if (el.dataset.scale) {
+      // The chosen scale: lit while it is shown, marked while a chord is.
+      const mine = el.dataset.scale === state.hornScale;
+      el.classList.toggle('on', mine && hornFocus === null);
+      el.classList.toggle('sel', mine && hornFocus !== null);
+    } else el.classList.toggle('on', +el.dataset.ci === (hornFocus ?? -1));
+  });
+
+  $('hline').innerHTML = state.guideLine
+    ? `<div class="hlinerow"><span class="lbl">Guide-tone line</span>${p.line.map((n, i) =>
+      `<button class="hln${i === hornFocus ? ' on' : ''}" data-ci="${i}" title="${esc(fnName[n.fn])} of ${esc(chordSymbol(p.layers[i], state.names))}">
+        <b>${esc(nm(n))}</b><small>${esc(n.fn)}</small></button>`).join('<span class="arrow">→</span>')}
+        ${midiButton('hmidiLine', 'Drag out the guide-tone line, with the chords as a second track (concert pitch, play-along bar lengths)')}</div>`
+    : '';
+  if ($('hmidiLine')) wireMidiDrag($('hmidiLine'), () => lineMidi(p));
+
+  if (!chord) {
+    const scaleTitle = `${nm(h.tonic)} ${h.scale.id === 'mode' ? modeLabel(h.mode) : h.scale.name.toLowerCase()}`;
+    $('hfocus').innerHTML = `<div class="hscale">
+      <h3>${esc(scaleTitle)}</h3>
+      <div class="hnotes">${h.notes.map((n, i) =>
+        `<button class="hnote${i === 0 ? ' tonic' : ''}${n.blue ? ' blue' : ''}" data-pc="${n.pc}" title="${n.blue ? 'Blue note' : ''}">
+          <b>${esc(nm(n))}</b>${state.solfa ? `<i>${esc(syl(n))}</i>` : ''}<small>${esc(degreeLabel(n, h.tonic))}</small></button>`).join('')}</div>
+      <button class="play" id="hplay">${linePlaying ? '■ Stop' : '▶ Play scale'}</button>
+      <button class="mic${exercise ? ' on' : ''}" id="hexer" title="Play this scale on your sax, up and down: the app listens and moves on when each note is right">${exercise ? '■ Stop exercise' : '🎯 Play it back'}</button>
+      ${midiButton('hmidiScale', 'Drag into your DAW or MuseScore: this scale up and down, as Play scale plays it (concert pitch)')}</div>`;
+  } else {
+    const l = h.layer, sym = chordSymbol(l, state.names);
+    const from = lent(chord) ? `borrowed from ${chord.source.name}` : chord.source === 'secondary' ? 'secondary dominant' : '';
+    const scaleName = `${nm(l.root)} ${l.scaleMode ? l.scaleMode.name : 'scale'}`;
+    const change = l.changes.length
+      ? `changes ${l.changes.map((c) => `${nm(c.from)} → ${nm(c.to)}`).join(', ')}`
+      : 'the key’s own notes, nothing changes';
+    $('hfocus').innerHTML = `<div class="hscale over">
+      <h3>Over ${esc(sym)} <small>${esc(chord.roman)}${from ? ` · ${esc(from)}` : ''}</small></h3>
+      <div class="hnotes">${l.tones.map((t) =>
+        `<button class="hnote tone${t.guide ? ' guide' : ''}${t.fn === 'R' ? ' tonic' : ''}" data-pc="${t.pc}" title="${esc(fnName[t.fn])}${t.guide ? ' · guide tone' : ''}">
+          <b>${esc(nm(t))}</b>${state.solfa ? `<i>${esc(syl(t))}</i>` : ''}<small>${esc(t.fn)}</small></button>`).join('')}</div>
+      <div class="hover-text">
+        <div><span class="k">Guide tones</span>${[l.third, l.seventh].filter((t, i, a) => a.indexOf(t) === i).map((t) => `${esc(nm(t))} (${fnName[t.fn]})`).join(' · ')}</div>
+        <div><span class="k">Scale</span>${esc(scaleName)}: ${esc(l.scale.map(nm).join(' '))} — ${esc(change)}</div>
+      </div></div>`;
+  }
+
+  if ($('hmidiScale')) wireMidiDrag($('hmidiScale'), scaleMidi);
+  renderStaves(h, p, chord, nm, syl);
+  renderFinger();
+  // Grid and staves were rebuilt: put the tuner marks back after this.
+  queueMicrotask(() => { renderTuner(true); markHeard(); });
+
+  // One row per octave (high at the top), one column per pitch class, so the
+  // same note lines up vertically and the scale's repeating shape shows.
+  const written = state.pitch === 'written', inst = h.inst;
+  const rows = new Map();
+  for (const c of h.cells) {
+    const r = Math.floor(c.midi / 12) - 1;
+    if (!rows.has(r)) rows.set(r, Array(12).fill(null));
+    rows.get(r)[c.pc] = c;
+  }
+  const regTip = Object.fromEntries(REGISTERS.map((r) => [r.id, r.tip]));
+  const cell = (c) => {
+    if (!c) return '<span class="hcell empty"></span>';
+    const here = `${nm(c)}${c.octave}`, there = `${formatNote(c.other.letter, c.other.acc, state.names)}${c.other.octave}`;
+    const tip = (written ? `Written ${here} · sounds ${there} (concert)` : `Concert ${here} · written ${there} for ${inst.name.toLowerCase()}`)
+      + (c.fn ? `\n${fnName[c.fn]} of ${chordSymbol(h.layer, state.names)}${c.guide ? ' · guide tone' : ''}` : '')
+      + `\n${regTip[c.register]}`;
+    const cls = ['hcell', `r-${c.register}`, c.inScale && 'in', c.tonic && 'tonic', c.blue && 'blue',
+      c.fn && 'tone', c.guide && 'guide', lineNote && lineNote.midi === c.midi && 'line'].filter(Boolean).join(' ');
+    return `<button class="${cls}" data-m="${c.midi}" title="${esc(tip)}">
+      ${c.fn ? `<em>${esc(c.fn)}</em>` : ''}<b>${esc(nm(c))}</b>${state.solfa && c.inScale ? `<i>${esc(syl(c))}</i>` : ''}</button>`;
+  };
+  $('hgrid').innerHTML = [...rows].sort((a, b) => b[0] - a[0]).map(([r, cols]) =>
+    `<div class="hrow"><span class="oct" title="Octave ${r}">${r}</span>${cols.map(cell).join('')}</div>`).join('');
+
+  $('hlegend').innerHTML = (chord
+    ? `<span><i class="sw tonic"></i>root</span><span><i class="sw tone"></i>chord tone</span><span><i class="sw guide"></i>guide tone (3rd, 7th)</span>
+       ${lineNote ? '<span><i class="sw line"></i>guide-tone line</span>' : ''}<span><i class="sw in"></i>fits the chord</span>`
+    : `<span><i class="sw tonic"></i>tonic</span><span><i class="sw in"></i>in the scale</span>
+       ${h.scale.blue ? '<span><i class="sw blue"></i>blue note</span>' : ''}`)
+    + `<span class="sep"></span>
+      ${REGISTERS.map((r) => `<span title="${esc(r.tip)}"><i class="bar r-${r.id}"></i>${esc(r.tip.split(':')[0])}${r.id === 'low' ? '' : ` · ${esc(r.tip.split(': ')[1])}`}</span>`).join('')}
+      <span class="hint">Click a chord to see its notes · click a note to hear it (concert pitch) · Space plays along</span>`;
+}
+
+// ------------------------------------------------------------ staff
+
+/** The focus staff (the scale, or the chord's tones as an arpeggio) and the
+ *  progression as a one-line lead sheet, in the pitch shown. Tenor and
+ *  baritone use bass clef in concert pitch, where their sound sits. */
+function renderStaves(h, p, chord, nm, syl) {
+  if (state.show === 'grid') return;
+  const { clef, rows, focus, lead } = buildStaves(h, p, chord, nm, syl);
+  focus.strip = state.strip;
+  // Fixed height (ledger room from A3 to E6 in treble) and, for the focus
+  // staff, the width of a full octave with a 7-accidental key signature, so
+  // the boxes keep their size as the scale, chord or key changes.
+  const noteW = state.strip ? 48 : STAFF.noteW;
+  focus.minWidth = 8 + STAFF.clefW + 7 * STAFF.sigW + 8 + STAFF.barPad + 8 * noteW + 2 * STAFF.accW;
+  $('hstaves').innerHTML = [focus, lead].map((s) => {
+    const g = layoutStaff({ clef, sig: s.sig, bars: s.bars, labels: rows, noteW: s.strip ? noteW : undefined,
+      span: [-3, 12], minWidth: s.minWidth ?? 0 });
+    return `<div class="staffbox"><h4>${esc(s.title)}</h4>${staffSvg(g, s.current, s.strip)}</div>`;
+  }).join('');
+}
+
+/** The staves' content (shared by the view and the practice sheet): clef,
+ *  rows of text under the notes, the focus staff and the lead sheet. */
+function buildStaves(h, p, chord, nm, syl, { guide = state.guideLine, current = hornFocus } = {}) {
+  const clef =state.pitch === 'concert' && ['tenor', 'bari'].includes(h.inst.id) ? 'bass' : 'treble';
+  const mid = clef === 'bass' ? 50 : 71; // middle line: D3 / B4
+  const top = h.cells.at(-1).midi, bottom = h.cells[0].midi;
+  const keySig = keySignature(h.key, h.mode.id);
+  // The lead sheet's syllables are always relative to the key's tonic.
+  const keySyl = (n) => solfa(n, h.keyTonic, { minor: h.mode.tonic !== 'I', la: state.minorDo === 'la' });
+  const texts = (n, s = syl) => (state.underNames ? [nm(n), ...(state.solfa ? [s(n)] : [])] : []);
+  const rows = state.underNames ? (state.solfa ? 2 : 1) : 0;
+  const toNote = (c, cls) => ({ letter: c.letter, acc: c.acc, octave: c.octave, midi: c.midi, sound: c.sound,
+    written: c.sound + h.inst.shift, cls, texts: texts(c) });
+
+  // Focus staff. The root/tonic is the one whose octave sits nearest the
+  // middle of the staff.
+  const roots = h.cells.filter((c) => c.tonic && c.midi + 12 <= top)
+    .sort((a, b) => Math.abs(a.midi + 6 - mid) - Math.abs(b.midi + 6 - mid));
+  const t = roots[0];
+  let focus;
+  if (!chord) {
+    const s = h.scale;
+    const sig = s.id === 'mode' ? keySig : keySignature(h.tonic, s.minor ? 'aeolian' : 'ionian');
+    const notes = h.cells.filter((c) => c.inScale && c.midi >= t.midi && c.midi <= t.midi + 12)
+      .map((c) => toNote(c, [c.tonic && 'tonic', c.blue && 'blue'].filter(Boolean).join(' ')));
+    focus = { title: 'Scale', sig, bars: [{ notes }] };
+  } else {
+    // Chord tones upward from the root, each on the next note above the last.
+    const notes = [];
+    let at = t.midi - 1;
+    for (const tone of h.layer.tones) {
+      at += 1 + mod12(tone.pc - (at + 1));
+      const c = h.cells.find((x) => x.midi === at);
+      if (c) notes.push(toNote(c, [tone.fn === 'R' && 'tonic', tone.guide && 'guide'].filter(Boolean).join(' ')));
+    }
+    focus = { title: `Over ${chordSymbol(h.layer, state.names)}`, sig: keySig, bars: [{ label: chordSymbol(h.layer, state.names), notes }] };
+  }
+
+  // Lead sheet: one bar per chord, the guide-tone line or else the roots.
+  const lead = {
+    title: guide ? 'Progression · guide-tone line' : 'Progression · roots',
+    sig: keySig,
+    bars: p.layers.map((l, i) => {
+      const n = guide ? p.line[i] : (() => {
+        const m = mid - 6 + mod12(l.root.pc - (mid - 6));
+        return { ...l.root, midi: m, sound: m - (state.pitch === 'written' ? h.inst.shift : 0) };
+      })();
+      const note = { letter: n.letter, acc: n.acc, octave: octaveOf(n.midi, n.acc), midi: n.midi, sound: n.sound,
+        cls: guide ? 'line' : 'tonic', texts: texts(n, keySyl) };
+      return { label: chordSymbol(l, state.names), notes: n.midi >= bottom && n.midi <= top ? [note] : [] };
+    }),
+    current,
+  };
+  return { clef, rows, focus, lead };
+}
+
+// ------------------------------------------------------------ practice sheet
+
+/** Fills #printsheet with a one-page sheet for the current settings and
+ *  opens the print dialog (which also offers "Save as PDF"). */
+function printSheet() {
+  const p = hornProgression();
+  const h = hornModel(), inst = h.inst, written = state.pitch === 'written';
+  const nm = (n) => formatNote(n.letter, n.acc, state.names);
+  const la = state.minorDo === 'la';
+  const sylFor = (hh, chord) => (n) => (chord
+    ? solfa(n, hh.keyTonic, { minor: hh.mode.tonic !== 'I', la })
+    : solfa(n, hh.tonic, { minor: hh.minor, la }));
+  const svg = (s, clef, rows, strip = false) =>
+    staffSvg(layoutStaff({ clef, sig: s.sig, bars: s.bars, labels: rows, noteW: strip ? 48 : undefined }), null, strip);
+
+  const base = buildStaves(h, p, null, nm, sylFor(h, null), { guide: true, current: null });
+  const scaleTitle = `${nm(h.tonic)} ${h.scale.id === 'mode' ? modeLabel(h.mode) : h.scale.name.toLowerCase()}`;
+  const chords = p.chords.map((c) => {
+    const hc = hornModel(c), l = hc.layer, sym = chordSymbol(l, state.names);
+    const s = buildStaves(hc, p, c, nm, sylFor(hc, c), { guide: true, current: null });
+    s.focus.bars[0].label = null; // the box title already names the chord
+    const guide = [l.third, l.seventh].filter((t, i, a) => a.indexOf(t) === i).map((t) => `${nm(t)} (${fnName[t.fn]})`).join(' · ');
+    const change = l.changes.length ? `changes ${l.changes.map((x) => `${nm(x.from)} → ${nm(x.to)}`).join(', ')}` : 'the key’s own notes';
+    return `<div class="ps-chord"><div class="ps-ch"><b>${esc(sym)}</b> <small>${esc(c.roman)}</small></div>
+      ${svg(s.focus, s.clef, s.rows)}
+      <div class="ps-cap">Guide tones: ${esc(guide)}<br>${esc(`${nm(l.root)} ${l.scaleMode ? l.scaleMode.name : 'scale'}`)} — ${esc(change)}</div></div>`;
+  }).join('');
+
+  let sheet = $('printsheet');
+  if (!sheet) { sheet = document.createElement('div'); sheet.id = 'printsheet'; document.body.appendChild(sheet); }
+  sheet.innerHTML = `
+    <header>
+      <h1>${esc(inst.name)} — ${esc(nm(h.key))} ${esc(modeLabel(h.mode))} <span>(${written ? 'written' : 'concert'})</span></h1>
+      <p>${written ? `Concert ${esc(nm(h.otherKey))} ${esc(h.mode.name)}` : `Written ${esc(nm(h.otherKey))} ${esc(h.mode.name)} for ${esc(inst.name.toLowerCase())}`}
+        · Progression: ${esc(p.b.mood)} — ${esc(p.b.name)}</p>
+    </header>
+    <section><h2>Scale · ${esc(scaleTitle)}</h2>${svg(base.focus, base.clef, base.rows, true)}</section>
+    <section><h2>Chords · tones to aim for</h2><div class="ps-chords${p.chords.length > 6 ? ' dense' : ''}">${chords}</div></section>
+    <section><h2>Lead sheet · guide-tone line</h2>${svg(base.lead, base.clef, base.rows)}</section>
+    <footer>Chordfinder</footer>`;
+
+  // WKWebView (macOS) ignores window.print(); the app asks the window instead.
+  const tauri = window.__TAURI__?.core;
+  if (tauri && /Mac/.test(navigator.userAgent)) tauri.invoke('print_page').catch((e) => console.error(e));
+  else window.print();
+}
+
+// ------------------------------------------------------------ fingering
+
+// The note the fingering panel shows (displayed MIDI), null = the tonic.
+let fingerMidi = null;
+
+/** A fingering diagram: pressed keys filled. Full size has key names as
+ *  tooltips and the hand labels. */
+function fingerSvg(keys, { scale = 1, full = false } = {}) {
+  const on = new Set(keys);
+  const shapes = KEYS.map((k) => {
+    const cls = `fk${on.has(k.id) ? ' on' : ''}`;
+    const t = full ? `<title>${esc(k.name)}</title>` : '';
+    return k.s === 'c'
+      ? `<circle class="${cls}" cx="${k.x}" cy="${k.y}" r="${k.r}">${t}</circle>`
+      : `<ellipse class="${cls}" cx="${k.x}" cy="${k.y}" rx="${k.rx}" ry="${k.ry}">${t}</ellipse>`;
+  }).join('');
+  const deco = `<line class="fdiv" x1="34" y1="${DIAGRAM.split}" x2="66" y2="${DIAGRAM.split}"/>`
+    + (full ? `<text class="fhand" x="98" y="60">L</text><text class="fhand" x="98" y="176">R</text>` : '');
+  return `<g transform="scale(${scale})">${deco}${shapes}</g>`;
+}
+
+/** Fingering panel for `fingerMidi`: big diagram, the note in both pitches,
+ *  register, and the common alternates. */
+function renderFinger() {
+  const el = $('hfinger');
+  if (!el) return;
+  const chord = hornFocus === null ? null : hornProgression().chords[hornFocus];
+  const h = hornModel(chord), inst = h.inst, written = state.pitch === 'written';
+  const shown = written ? inst.shift : 0;
+  const mid = 67 - inst.shift + shown; // around written G4
+  const cell = h.cells.find((c) => c.midi === fingerMidi)
+    ?? h.cells.filter((c) => c.tonic).sort((a, b) => Math.abs(a.midi - mid) - Math.abs(b.midi - mid))[0];
+  const w = cell.sound + inst.shift;
+  const [main, ...alts] = fingeringsFor(w);
+  const nm = (l, a) => formatNote(l, a, state.names);
+  const here = `${nm(cell.letter, cell.acc)}${cell.octave}`, there = `${nm(cell.other.letter, cell.other.acc)}${cell.other.octave}`;
+  const reg = REGISTERS.find((r) => r.id === cell.register);
+  el.innerHTML = `<h4>Fingering</h4>
+    <div class="fmain">
+      <svg class="fdiag" width="${DIAGRAM.w}" height="${DIAGRAM.h}" viewBox="0 0 ${DIAGRAM.w} ${DIAGRAM.h}">${fingerSvg(main.keys, { full: true })}</svg>
+      <div class="finfo">
+        <b>${esc(written ? here : there)}</b>
+        <span>${written ? `written · sounds ${esc(there)}` : `written · sounds ${esc(here)} (concert)`}</span>
+        <span class="freg">${esc(reg.tip)}</span>
+        ${main.keys.length ? '' : '<span class="freg">All keys open</span>'}
+        ${alts.length ? `<div class="falts">${alts.map((a) => `<div class="falt" title="${esc(a.tip)}">
+          <svg width="${DIAGRAM.w * 0.45}" height="${DIAGRAM.h * 0.45}">${fingerSvg(a.keys, { scale: 0.45 })}</svg>
+          <small>${esc(a.name)}</small></div>`).join('')}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+const mod12 = (n) => ((n % 12) + 12) % 12;
+
+/** SVG for a laid-out staff; `current` highlights that bar; `strip` adds a
+ *  small fingering chart under each note. */
+function staffSvg(g, current = null, strip = false) {
+  const sc = 0.42, stripY = g.height + 4;
+  const extra = strip ? DIAGRAM.h * sc + 8 : 0;
+  const x0 = 4, x1 = g.width - 2;
+  const [topLine, , , , botLine] = g.lines;
+  const hl = current !== null && g.barBoxes[current]
+    ? `<rect class="sbar-on" x="${g.barBoxes[current].x + 2}" y="${topLine - 22}" width="${g.barBoxes[current].w - 4}" height="${botLine - topLine + 30}" rx="6"/>` : '';
+  const lines = g.lines.map((y) => `<line class="sline" x1="${x0}" y1="${y}" x2="${x1}" y2="${y}"/>`).join('');
+  const clef = g.clef.id === 'treble'
+    ? `<text class="sclef" x="6" y="${botLine + g.half * 2.6}" style="font-size:${g.half * 15}px">${g.clef.glyph}</text>`
+    : `<text class="sclef" x="8" y="${topLine + g.half * 6.2}" style="font-size:${g.half * 8.6}px">${g.clef.glyph}</text>`;
+  const sig = g.sigGlyphs.map((s) => `<text class="sacc" x="${s.x}" y="${s.y}">${s.glyph}</text>`).join('');
+  const bars = g.barlines.map((x, i) => (i === g.barlines.length - 1
+    ? `<line class="sline" x1="${x - 4}" y1="${topLine}" x2="${x - 4}" y2="${botLine}"/><line class="sline thick" x1="${x}" y1="${topLine}" x2="${x}" y2="${botLine}"/>`
+    : `<line class="sline" x1="${x}" y1="${topLine}" x2="${x}" y2="${botLine}"/>`)).join('');
+  const labels = g.barBoxes.map((b) => (b.label ? `<text class="slabel" x="${b.x + 16}" y="${Math.min(14, topLine - 14)}">${esc(b.label)}</text>` : '')).join('');
+  const notes = g.notes.map((n) => `<g class="snote ${n.cls}" data-m="${n.midi}" data-snd="${n.sound}">
+      ${n.ledgers.map((y) => `<line class="sledger" x1="${n.x - 11}" y1="${y}" x2="${n.x + 11}" y2="${y}"/>`).join('')}
+      ${n.acc ? `<text class="sacc" x="${n.accX}" y="${n.y}">${n.acc}</text>` : ''}
+      <ellipse class="shead" cx="${n.x}" cy="${n.y}" rx="6.6" ry="4.6" transform="rotate(-20 ${n.x} ${n.y})"/>
+      <rect class="shit" x="${n.x - 12}" y="${n.y - 9}" width="24" height="18"/>
+      ${n.texts.map((t, i) => `<text class="stext${i ? ' syl' : ''}" x="${n.x}" y="${g.textY + i * 14}">${esc(t)}</text>`).join('')}</g>`).join('');
+  const minis = strip ? g.notes.map((n) => {
+    const fing = fingeringsFor(n.written)[0];
+    return fing ? `<g class="fmini" data-m="${n.midi}" transform="translate(${n.x - (DIAGRAM.w * sc) / 2} ${stripY})">${fingerSvg(fing.keys, { scale: sc })}</g>` : '';
+  }).join('') : '';
+  const H = g.height + extra;
+  return `<svg class="staff" width="${g.width}" height="${H}" viewBox="0 0 ${g.width} ${H}">${hl}${lines}${clef}${sig}${bars}${labels}${notes}${minis}</svg>`;
+}
+
+/** Shows a note's fingering (displayed MIDI) without re-rendering the rest. */
+function showFinger(midi) {
+  if (midi === fingerMidi) return;
+  fingerMidi = midi;
+  renderFinger();
+}
+
+// Whether the header's Options panel is open (kept across re-renders).
+let optsOpen = false;
+
+/** A click on a segmented control bound to a state key (see `seg`). */
+function segClick(e) {
+  const opt = e.target.closest('[data-set] [data-v]');
+  if (!opt) return false;
+  const key = opt.parentElement.dataset.set, v = opt.dataset.v;
+  update({ [key]: v === 'true' ? true : v === 'false' ? false : /^\d+$/.test(v) ? +v : v });
+  return true;
+}
+
+function wireHorn() {
+  $('saxbar').onclick = (e) => {
+    if (e.target.closest('#hoptbtn')) { optsOpen = !optsOpen; renderHorn(); return; }
+    segClick(e);
+  };
+  // A click anywhere outside closes the Options panel.
+  document.addEventListener('mousedown', (e) => {
+    if (optsOpen && !e.target.closest('.hoptwrap')) { optsOpen = false; renderHorn(); }
+  });
+  // Hovering a note in the grid or on a staff shows its fingering.
+  $('horn').onmouseover = (e) => {
+    const n = e.target.closest('.hcell[data-m], .snote[data-m], .fmini[data-m]');
+    if (n) showFinger(+n.dataset.m);
+  };
+  $('horn').onclick = (e) => {
+    if (state.practice && e.target.closest('#hquiz') && wireQuiz(e)) return;
+    if (segClick(e)) return;
+    if (e.target.closest('#hplay')) return linePlaying ? stopHorn() : playScale();
+    if (e.target.closest('#hmic')) return micOn() ? micOff() : micStart();
+    if (e.target.closest('#hprint')) return printSheet();
+    if (e.target.closest('#hexer')) return exercise ? endExercise(false) : startExercise();
+    if (e.target.closest('#halong')) return alongPlaying ? stopHorn() : playAlongNow();
+    const ch = e.target.closest('[data-ci]');
+    if (ch?.dataset.scale) {
+      // A scale chip: show that scale (switching type if needed).
+      if (!alongPlaying) stopHorn();
+      hornFocus = null;
+      if (ch.dataset.scale !== state.hornScale) update({ hornScale: ch.dataset.scale });
+      else renderFocus();
+      return;
+    }
+    if (ch) {
+      const i = +ch.dataset.ci;
+      if (!alongPlaying) stopHorn();
+      hornFocus = i < 0 ? null : i;
+      renderFocus();
+      if (i >= 0 && !alongPlaying) {
+        if (ch.classList.contains('hln')) playNote(hornProgression().line[i].sound);
+        else playChord(hornProgression().chords[i]);
+      }
+      return;
+    }
+    const c = e.target.closest('.hcell[data-m]');
+    if (c) return flashNote(+c.dataset.m);
+    const sn = e.target.closest('.snote');
+    if (sn) {
+      if (linePlaying) stopHorn();
+      playNote(+sn.dataset.snd);
+      sn.classList.add('playing');
+      setTimeout(() => sn.classList.remove('playing'), 450);
+      return;
+    }
+    const n = e.target.closest('.hnote');
+    if (n) {
+      // That note just above the lowest root/tonic in range.
+      const cells = hornModel(hornFocus === null ? null : hornProgression().chords[hornFocus]).cells;
+      const low = cells.find((x) => x.tonic).midi;
+      const cell = cells.find((x) => x.pc === +n.dataset.pc && x.midi >= low);
+      if (cell) flashNote(cell.midi);
+    }
+  };
+}
+
+/** Plays one cell's note and lights it up briefly. */
+function flashNote(midi) {
+  const el = $('hgrid').querySelector(`.hcell[data-m="${midi}"]`);
+  if (!el) return;
+  if (linePlaying) stopHorn();
+  const shift = state.pitch === 'written' ? hornModel().inst.shift : 0;
+  playNote(midi - shift);
+  el.classList.add('playing');
+  setTimeout(() => el.classList.remove('playing'), 450);
+}
+
+/** The scale from the lowest tonic in range to the highest, and back down. */
+function scaleRun(h) {
+  const tonics = h.cells.filter((c) => c.tonic);
+  const up = h.cells.filter((c) => c.inScale && c.midi >= tonics[0].midi && c.midi <= tonics.at(-1).midi);
+  return [...up, ...up.slice(0, -1).reverse()];
+}
+
+const midiButton = (id, tip) => `<button class="midi" id="${id}" title="${esc(tip)}">
+  <svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><g fill="currentColor"><circle cx="4" cy="3" r="1.3"/><circle cx="10" cy="3" r="1.3"/><circle cx="4" cy="7" r="1.3"/><circle cx="10" cy="7" r="1.3"/><circle cx="4" cy="11" r="1.3"/><circle cx="10" cy="11" r="1.3"/></g></svg>
+  MIDI</button>`;
+
+/** The scale as Play scale plays it (eighth notes), in sounding pitch. */
+function scaleMidi() {
+  const h = hornModel();
+  const title = `${formatNote(h.tonic.letter, h.tonic.acc)} ${h.scale.id === 'mode' ? h.mode.name : h.scale.name.toLowerCase()}`;
+  const name = midiFileName(title, 'scale', h.inst.name);
+  return {
+    name,
+    bytes: melodyToMidi(scaleRun(h).map((c) => ({ midi: c.sound, beats: 0.5 })),
+      { bpm: state.bpm, program: GM_SAX[h.inst.id], name: name.replace(/\.mid$/, '') }),
+  };
+}
+
+/** The guide-tone line, one note per chord at the play-along length, with
+ *  the chords on a second track. Sounding pitch. */
+function lineMidi(p) {
+  const h = hornModel(), beats = alongBeats(p.chords.length);
+  const name = midiFileName(`${model.s.key.name} ${h.mode.name}`, p.b.name, 'guide tones');
+  return {
+    name,
+    bytes: melodyToMidi(p.line.map((n, i) => ({ midi: n.sound, beats: beats[i], marker: p.chords[i].name })),
+      { bpm: state.bpm, program: GM_SAX[h.inst.id], name: name.replace(/\.mid$/, ''), chords: p.chords, chordBeats: beats }),
+  };
+}
+
+/** Up from the lowest tonic in range to the highest, and back down. */
+function playScale() {
+  stopHorn();
+  const h = hornModel();
+  const line = scaleRun(h);
+  linePlaying = true;
+  $('hplay').textContent = '■ Stop';
+  playLine(line.map((c) => c.sound), state.bpm, (i) => {
+    $('horn').querySelectorAll('.playing').forEach((el) => el.classList.remove('playing'));
+    $('horn').querySelectorAll(`.hcell[data-m="${line[i].midi}"], #hstaves .staffbox:first-child .snote[data-m="${line[i].midi}"]`)
+      .forEach((el) => el.classList.add('playing'));
+    showFinger(line[i].midi);
+  }, stopHorn);
+}
+
+/** Count-in, then the progression on a loop; the grid follows each chord. */
+function playAlongNow() {
+  stopHorn();
+  const p = hornProgression();
+  alongPlaying = true;
+  along = { tone: 0, scale: 0, out: 0, lastSince: null };
+  lastResults = null;
+  const btn = $('halong');
+  btn.textContent = '■ Stop';
+  playAlong({
+    chords: p.chords, beats: alongBeats(p.chords.length), bpm: state.bpm,
+    line: state.guideLine ? p.line.map((n) => n.sound) : null,
+    onCount: (n) => { btn.textContent = `■ ${n + 1}…`; },
+    onStep: (i) => {
+      btn.textContent = '■ Stop';
+      hornFocus = i;
+      // With the guide-tone line on, the panel shows the note to play.
+      if (state.guideLine) fingerMidi = p.line[i].midi;
+      renderFocus(p);
+      $('hchords').querySelector(`[data-ci="${i}"]`)?.classList.add('playing');
+    },
+  });
+}
+
+/** Stops the scale or the play-along, keeping the focused chord. */
+function stopHorn() {
+  stop();
+  linePlaying = false;
+  alongPlaying = false;
+  $('horn').querySelectorAll('.playing').forEach((el) => el.classList.remove('playing'));
+  const b = $('hplay');
+  if (b) b.textContent = '▶ Play scale';
+  const a = $('halong');
+  if (a) a.textContent = '▶ Play along';
+}
+
+// ------------------------------------------------------------ practice drills
+
+const QUIZ_STORE = 'chordfinder:quiz';
+let quizStats = (() => { try { return JSON.parse(localStorage.getItem(QUIZ_STORE)) ?? {}; } catch { return {}; } })();
+const saveQuiz = () => { try { localStorage.setItem(QUIZ_STORE, JSON.stringify(quizStats)); } catch { /* storage unavailable */ } };
+
+// The current question and what was answered; `sig` notes the settings it
+// was made for, so a re-render only makes a new one when they change.
+let quiz = { q: null, answered: null, sig: '' };
+let resetArmed = 0;
+
+const quizLevel = () => state.levels?.[state.drill] ?? 0;
+const statsKey = () => `${state.drill}:${quizLevel()}`;
+const quizSig = () => [state.drill, quizLevel(), state.rootPc, state.modeId, state.instrument, state.minorDo].join(':');
+
+function newQuestion(play = true) {
+  stop();
+  quiz = {
+    q: makeQuestion({
+      drill: state.drill, level: quizLevel(), rootPc: state.rootPc, modeId: state.modeId,
+      instrumentId: state.instrument, la: state.minorDo === 'la', prev: quiz.q?.answer,
+    }),
+    answered: null, sig: quizSig(),
+  };
+  renderQuiz();
+  if (play) playQuestion();
+}
+
+function playQuestion() {
+  const q = quiz.q;
+  if (!q) return;
+  stop();
+  if (q.drill === 'degree') playSequence(q.cadence, 104, [1, 1, 1, 2], () => {}, () => playNote(q.target, 1.3));
+  else if (q.drill === 'tone') playOver(q.chord, q.target);
+  else playNote(q.target, 1); // reading: only on request or after answering
+}
+
+function answerQuiz(id) {
+  const q = quiz.q;
+  if (!q || quiz.answered !== null) return;
+  const ok = isRight(q, id);
+  quiz.answered = id;
+  quizStats[statsKey()] = record(quizStats[statsKey()], ok);
+  saveQuiz();
+  renderQuiz();
+  // Let her hear the answer: degrees walk home to Do.
+  if (q.drill === 'degree') playLine(q.resolve, 150, () => {}, () => {});
+  else if (q.drill === 'tone') playOver(q.chord, q.target, 0.5);
+  else playNote(q.target, 1);
+}
+
+function renderQuiz() {
+  const el = $('hquiz');
+  if (!el) return;
+  if (!quiz.q || quiz.sig !== quizSig()) {
+    // Settings changed (or first time): fresh question, played on the next click.
+    quiz = { q: null, answered: null, sig: '' };
+    quiz.q = makeQuestion({
+      drill: state.drill, level: quizLevel(), rootPc: state.rootPc, modeId: state.modeId,
+      instrumentId: state.instrument, la: state.minorDo === 'la',
+    });
+    quiz.sig = quizSig();
+  }
+  const q = quiz.q, d = drillById(state.drill), lv = quizLevel(), st = quizStats[statsKey()] ?? emptyStats();
+  const acc = accuracy(st), done = quiz.answered !== null, ok = done && isRight(q, quiz.answered);
+  const nm = (n) => formatNote(n.letter, n.acc, state.names);
+  const optLabel = (o) => (q.drill === 'read' ? esc(nm(o)) : `${esc(o.label)}${o.sub ? `<small>${esc(o.sub)}</small>` : ''}`);
+  const rightOpt = q.options.find((o) => o.id === q.answer);
+  const opts = q.options.map((o, i) => {
+    const cls = !done ? '' : o.id === q.answer ? ' right' : o.id === quiz.answered ? ' wrong' : ' dim';
+    return `<button class="qopt${cls}" data-qa="${esc(String(o.id))}"><kbd>${i < 9 ? i + 1 : i === 9 ? 0 : ''}</kbd>${optLabel(o)}</button>`;
+  }).join('');
+
+  let stage = '';
+  if (q.drill === 'read') {
+    const n = { letter: q.note.letter, acc: q.note.acc, octave: q.note.octave, midi: q.written, sound: q.target, cls: done ? (ok ? 'guide' : 'tonic') : '', texts: done ? [nm(q.note)] : [] };
+    const g = layoutStaff({ clef: 'treble', sig: keySignature(q.key, state.modeId), bars: [{ notes: [n] }], labels: 1 });
+    stage = `<div class="qstaff">${staffSvg(g)}</div>
+      <div class="qmic">${micOn()
+        ? `<span class="qheard">${heard ? `🎤 You’re playing <b>${esc(writtenName(heard.midi))}</b>` : '🎤 Play the note on your sax…'}</span> <button class="link" id="qmic">mic off</button>`
+        : '<button class="mic" id="qmic">🎤 Answer by playing</button>'}</div>`;
+  } else {
+    stage = `<div class="qplay"><button class="play" id="qreplay">▶ Replay <kbd>R</kbd></button>
+      <span class="qprompt">${q.drill === 'degree' ? 'Which note was that?' : 'Which chord tone was on top?'}</span></div>`;
+  }
+  const feedback = !done ? '' : `<div class="qfeed ${ok ? 'ok' : 'bad'}">${ok ? '✓ Right' : '✗ Not quite'} — ${q.drill === 'read'
+    ? `it’s ${esc(nm(q.note))}${q.note.octave}`
+    : q.drill === 'degree' ? `it was ${esc(rightOpt.label)} (${esc(rightOpt.sub)})` : `it was the ${esc(rightOpt.label.toLowerCase())} of ${esc(q.chord.name)}`}
+    <button class="play" id="qnext">Next <kbd>Space</kbd></button></div>`;
+
+  el.innerHTML = `
+    <div class="qhead">
+      <div class="seg" data-set="drill">${DRILLS.map((x) => `<button data-v="${x.id}" class="${x.id === d.id ? 'on' : ''}">${esc(x.name)}</button>`).join('')}</div>
+      <div class="seg qlevels">${d.levels.map((l, i) => `<button data-qlevel="${i}" class="${i === lv ? 'on' : ''}">${i + 1} · ${esc(l.name)}</button>`).join('')}</div>
+    </div>
+    <p class="qblurb">${esc(d.blurb)}</p>
+    <div class="qscore">
+      <span>Streak <b>${st.streak}</b></span><span>Best <b>${st.best}</b></span>
+      <span>Last ${st.recent.length || 20}: <b>${acc === null ? '—' : `${acc}%`}</b></span><span>${st.total} answered</span>
+      <button class="link" id="qreset">${resetArmed > Date.now() ? 'Sure? Click again' : 'Reset'}</button>
+      ${ready(st) && lv < d.levels.length - 1 ? `<button class="qready" data-qlevel="${lv + 1}">90%+ — try level ${lv + 2} →</button>` : ''}
+    </div>
+    <div class="qcard">${stage}<div class="qopts">${opts}</div>${feedback}</div>`;
+}
+
+/** Name of a concert MIDI note in written pitch for the current sax. */
+function writtenName(concert) {
+  const m = concert + currentInst().shift;
+  const c = hornView({ instrumentId: state.instrument, pitch: 'written', rootPc: state.rootPc, modeId: state.modeId }).cells.find((x) => x.midi === m);
+  return c ? `${formatNote(c.letter, c.acc, state.names)}${c.octave}` : '—';
+}
+
+function wireQuiz(e) {
+  const t = e.target;
+  const lvl = t.closest('[data-qlevel]');
+  if (lvl) { update({ levels: { ...state.levels, [state.drill]: +lvl.dataset.qlevel } }); return true; }
+  const a = t.closest('[data-qa]');
+  if (a) {
+    const o = quiz.q.options.find((x) => String(x.id) === a.dataset.qa);
+    if (o) answerQuiz(o.id);
+    return true;
+  }
+  if (t.closest('#qreplay')) { playQuestion(); return true; }
+  if (t.closest('#qnext')) { newQuestion(); return true; }
+  if (t.closest('#qmic')) { micOn() ? micOff() : micStart(); return true; }
+  if (t.closest('#qreset')) {
+    if (resetArmed > Date.now()) { delete quizStats[statsKey()]; saveQuiz(); resetArmed = 0; }
+    else { resetArmed = Date.now() + 3000; setTimeout(renderQuiz, 3100); }
+    renderQuiz();
+    return true;
+  }
+  return false;
+}
+
+/** Keys while practising: 1–9/0 answer, R replays, Space = next (or replay). */
+function quizKey(e) {
+  if (!quiz.q || e.target.closest?.('input, select')) return false;
+  if (/^[0-9]$/.test(e.key)) {
+    const i = e.key === '0' ? 9 : +e.key - 1;
+    const o = quiz.q.options[i];
+    if (o) answerQuiz(o.id);
+    return true;
+  }
+  if (e.key === 'r' || e.key === 'R') { playQuestion(); return true; }
+  if (e.code === 'Space') { quiz.answered !== null ? newQuestion() : playQuestion(); return true; }
+  return false;
+}
+
+/** Reading drill with the tuner on: playing the right note answers it. */
+function quizHear() {
+  if (!state.practice || quiz.q?.drill !== 'read' || quiz.answered !== null) return;
+  if (heard && heard.midi === quiz.q.target && performance.now() - heard.since > 300) answerQuiz(quiz.q.answer);
+  else {
+    const span = $('hquiz')?.querySelector('.qheard');
+    if (span) span.innerHTML = heard ? `🎤 You’re playing <b>${esc(writtenName(heard.midi))}</b>` : '🎤 Play the note on your sax…';
+  }
+}
+
+// ------------------------------------------------------------ microphone
+
+let micError = null; // why the mic could not start, shown in the tuner box
+let heard = null; // steady note from the mic: { midi (concert), cents, since }
+let exercise = null; // "play it back": { targets: [cell], i, results: [{ cell, cents }] }
+let lastResults = null; // the finished exercise, until the next one
+let along = null; // play-along tally: { tone, scale, out, lastSince }
+let tunerHtml = '';
+
+const IN_TUNE = 15; // cents
+
+const currentInst = () => INSTRUMENTS.find((i) => i.id === state.instrument) ?? INSTRUMENTS[1];
+const shownShift = () => (state.pitch === 'written' ? currentInst().shift : 0);
+
+async function micStart() {
+  const inst = currentInst();
+  micError = null;
+  try {
+    // Search a little beyond the instrument's sounding range.
+    await startMic({
+      minHz: freqOf(SAX_RANGE.low - inst.shift - 2), maxHz: freqOf(SAX_RANGE.high - inst.shift + 3), onFrame: onMicFrame,
+    });
+  } catch (e) {
+    micError = e?.name === 'NotAllowedError' ? 'Microphone access was blocked. Allow it for Chordfinder to use the tuner.'
+      : e?.name === 'NotFoundError' ? 'No microphone found.'
+        : `Microphone unavailable (${e?.message || e?.name || e}).`;
+    exercise = null;
+  }
+  renderHorn();
+}
+
+function micOff() {
+  stopMic();
+  heard = null;
+  exercise = null;
+  micError = null;
+  renderHorn();
+}
+
+function onMicFrame(stable) {
+  const changed = (stable?.midi ?? null) !== (heard?.midi ?? null) || stable?.since !== heard?.since;
+  heard = stable;
+  if (changed) {
+    markHeard();
+    if (stable && !exercise) showFinger(stable.midi + shownShift());
+  }
+  countAlong(); // once per note, including one already sounding when the loop starts
+  quizHear();
+  if (exercise) stepExercise();
+  renderTuner();
+}
+
+/** How the heard note relates to the focused chord: 'tone', 'scale' or
+ *  'out' (null with the scale shown). Read from the grid's own marks. */
+function relation(m) {
+  if (hornFocus === null) return null;
+  const cell = $('hgrid')?.querySelector(`.hcell[data-m="${m}"]`);
+  return cell?.classList.contains('tone') ? 'tone' : cell?.classList.contains('in') ? 'scale' : 'out';
+}
+
+/** Rings the heard note on the grid and staves, coloured by `relation`. */
+function markHeard() {
+  const horn = $('horn');
+  horn.querySelectorAll('.heard').forEach((el) => el.classList.remove('heard', 'heard-tone', 'heard-scale', 'heard-out'));
+  if (!heard) return;
+  const m = heard.midi + shownShift(), rel = relation(m);
+  horn.querySelectorAll(`.hcell[data-m="${m}"], #hstaves .snote[data-m="${m}"]`)
+    .forEach((el) => el.classList.add('heard', ...(rel ? [`heard-${rel}`] : [])));
+}
+
+function countAlong() {
+  if (!alongPlaying || !along || !heard || heard.since === along.lastSince) return;
+  const rel = relation(heard.midi + shownShift());
+  if (!rel) return;
+  along[rel]++;
+  along.lastSince = heard.since;
+}
+
+/** One octave of the scale, up and down, as on the scale staff. */
+function exerciseTargets() {
+  const h = hornModel();
+  const bass = state.pitch === 'concert' && ['tenor', 'bari'].includes(h.inst.id);
+  const mid = bass ? 50 : 71, top = h.cells.at(-1).midi;
+  const t = h.cells.filter((c) => c.tonic && c.midi + 12 <= top).sort((a, b) => Math.abs(a.midi + 6 - mid) - Math.abs(b.midi + 6 - mid))[0];
+  const up = h.cells.filter((c) => c.inScale && c.midi >= t.midi && c.midi <= t.midi + 12);
+  return [...up, ...up.slice(0, -1).reverse()];
+}
+
+function startExercise() {
+  stopHorn();
+  hornFocus = null;
+  // ownsMic: the exercise switched the mic on, so it switches it off again.
+  exercise = { targets: exerciseTargets(), i: 0, results: [], ownsMic: !micOn() };
+  lastResults = null;
+  if (micOn()) renderHorn();
+  else micStart();
+}
+
+/** Moves on once the target has sounded steadily for a moment. */
+function stepExercise() {
+  const tgt = exercise.targets[exercise.i];
+  if (!heard || heard.midi !== tgt.sound || performance.now() - heard.since < 350) return;
+  exercise.results.push({ cell: tgt, cents: heard.cents });
+  exercise.i++;
+  if (exercise.i >= exercise.targets.length) return endExercise(true);
+  markTarget();
+}
+
+/** Ends the exercise (finished or stopped). If it turned the mic on, it
+ *  turns it off again; a mic the user had on stays on. The results stay
+ *  in the tuner box either way. */
+function endExercise(done) {
+  lastResults = done ? exercise.results : null;
+  if (exercise.ownsMic) { stopMic(); heard = null; }
+  exercise = null;
+  renderHorn();
+}
+
+/** Highlights the note to play next and shows its fingering. */
+function markTarget() {
+  $('horn').querySelectorAll('.target').forEach((el) => el.classList.remove('target'));
+  if (!exercise) return;
+  const m = exercise.targets[exercise.i].midi;
+  $('horn').querySelectorAll(`.hcell[data-m="${m}"], #hstaves .snote[data-m="${m}"]`).forEach((el) => el.classList.add('target'));
+  showFinger(m);
+}
+
+/** The tuner box: heard note in the pitch shown, a cents needle, and the
+ *  exercise or play-along feedback. Only rewritten when its text changes. */
+function renderTuner(force = false) {
+  const box = $('htuner');
+  if (!box) return;
+  const visible = micOn() || micError || lastResults;
+  box.hidden = !visible;
+  if (!visible) return;
+  if (force) tunerHtml = '';
+  const chord = hornFocus === null ? null : hornProgression().chords[hornFocus];
+  const h = hornModel(chord);
+  const nm = (n) => formatNote(n.letter, n.acc, state.names);
+  const label = (m) => { const c = h.cells.find((x) => x.midi === m); return c ? `${nm(c)}${c.octave}` : ''; };
+  let html = '<h4>Tuner</h4>';
+  if (micError) html += `<p class="terr">${esc(micError)}</p>`;
+  else if (micOn()) {
+    if (heard) {
+      const m = heard.midi + shownShift(), c = heard.cents, cell = h.cells.find((x) => x.midi === m);
+      const tone = Math.abs(c) <= IN_TUNE ? 'ok' : Math.abs(c) <= 30 ? 'near' : 'off';
+      const pos = 50 + Math.max(-50, Math.min(50, c));
+      html += `<div class="tnote">${esc(label(m) || '—')}</div>
+        <div class="tneedle"><span class="tzone"></span><span class="tmark ${tone}" style="left:${pos}%"></span></div>
+        <div class="tcents ${tone}">${Math.abs(c) <= 5 ? 'in tune' : `${c > 0 ? '+' : ''}${c}¢ ${c > 0 ? 'sharp' : 'flat'}`}</div>
+        <div class="tsub">${state.pitch === 'written' ? 'written' : 'concert'}${cell ? ` · ${state.pitch === 'written' ? 'sounds' : 'written'} ${esc(nm(cell.other))}${cell.other.octave}` : ' · outside the sax range'}</div>`;
+      if (alongPlaying && chord && cell) {
+        const rel = relation(m), sym = chordSymbol(h.layer, state.names);
+        html += `<div class="tfit ${rel}">${rel === 'tone' ? `${fnName[cell.fn]} of ${esc(sym)}` : rel === 'scale' ? `fits ${esc(sym)}` : `outside ${esc(sym)}`}</div>`;
+      }
+    } else {
+      html += '<div class="tnote idle">Play a note…</div><div class="tsub">Listening · nothing is recorded</div>';
+    }
+  }
+  if (along && (along.tone + along.scale + along.out)) {
+    html += `<div class="ttally"><span class="tone">${along.tone} chord tones</span> · <span>${along.scale} in scale</span> · <span class="out">${along.out} outside</span></div>`;
+  }
+  if (exercise) {
+    const t = exercise.targets[exercise.i];
+    html += `<div class="texer">Play <b>${esc(label(t.midi))}</b> <small>${exercise.i + 1} / ${exercise.targets.length}</small></div>`;
+  } else if (lastResults) {
+    const sharp = lastResults.filter((r) => r.cents > IN_TUNE), flat = lastResults.filter((r) => r.cents < -IN_TUNE);
+    const list = (rs) => rs.map((r) => `${esc(label(r.cell.midi))} (${r.cents > 0 ? '+' : ''}${r.cents}¢)`).join(', ');
+    html += `<div class="tdone"><b>Scale done!</b> ${lastResults.length - sharp.length - flat.length} of ${lastResults.length} in tune
+      ${sharp.length ? `<div class="out">Sharp: ${list(sharp)}</div>` : ''}${flat.length ? `<div class="out">Flat: ${list(flat)}</div>` : ''}</div>`;
+  }
+  if (html !== tunerHtml) { box.innerHTML = html; tunerHtml = html; }
+  if (force) markTarget();
+}
+
 // ------------------------------------------------------------ main
 
 /** Picking a style sets its tempo, chord colour, chord length and root chord,
@@ -556,10 +1525,20 @@ function styleDefaults(styleId) {
 
 function update(patch = {}) {
   if (playing) halt();
+  if (linePlaying || alongPlaying) stopHorn();
   if ('styleId' in patch && patch.styleId !== state.styleId) patch = { ...styleDefaults(patch.styleId), ...patch };
   const keyChanged = ['rootPc', 'modeId', 'modifier', 'styleId'].some((k) => k in patch && patch[k] !== state[k]);
   Object.assign(state, patch);
-  if (keyChanged) { state.selected = 0; shiftOpen = null; }
+  if (keyChanged) { state.selected = 0; shiftOpen = null; hornFocus = null; }
+  // A displayed MIDI number means something else in another pitch or key.
+  if (['rootPc', 'modeId', 'instrument', 'pitch'].some((k) => k in patch)) fingerMidi = null;
+  // The exercise's notes belong to one key, scale and pitch.
+  if (exercise && ['rootPc', 'modeId', 'instrument', 'pitch', 'hornScale', 'view'].some((k) => k in patch && patch[k] !== state[k])) {
+    if (exercise.ownsMic) { stopMic(); heard = null; }
+    exercise = null;
+  }
+  if (patch.view === 'chords' && micOn()) { stopMic(); heard = null; }
+  if (patch.instrument && patch.instrument !== state.instrument && micOn()) queueMicrotask(micStart); // new pitch range
   save();
   const s = suggest(state);
   const tree = buildTree(s.templates);
@@ -569,6 +1548,7 @@ function update(patch = {}) {
   const mode = s.mode;
   const styleTag = s.style.id === 'theory' ? '' : ` · ${s.style.name}`;
   $('keyTitle').textContent = `${s.key.name} ${mode.name}${mode.alias ? ` (${mode.alias})` : ''}${styleTag} — root chord ${s.tonic.name}`;
+  $('keyFeel').title = '';
   $('keyFeel').textContent = `${mode.feel}. ${tree.branches.length} progressions · scale ${s.key.scale.map((n) => n.name).join(' ')}`;
   markActive();
   $('lgLine').hidden = state.returnStyle !== 'line';
@@ -576,6 +1556,8 @@ function update(patch = {}) {
   renderScale(s);
   renderGraph();
   renderDetail();
+  document.body.dataset.view = state.view;
+  if (state.view === 'sax') renderHorn();
 }
 
 // Right-click plays a whole progression instead of opening the browser menu.
@@ -602,9 +1584,14 @@ function branchForRightClick(target) {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !e.target.closest('input')) {
+  if (state.view === 'sax' && state.practice && !e.ctrlKey && !e.altKey && !e.metaKey && quizKey(e)) {
     e.preventDefault();
-    playing ? halt() : playBranch(selectedBranch());
+    return;
+  }
+  if (e.code === 'Space' && !e.target.closest('input, select')) {
+    e.preventDefault();
+    if (state.view === 'sax') linePlaying || alongPlaying ? stopHorn() : playAlongNow();
+    else playing ? halt() : playBranch(selectedBranch());
   }
 });
 

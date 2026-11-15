@@ -408,4 +408,211 @@ export const GENRE_STYLES = [
       ],
     },
   },
+
+  // ------------------------------------------------------------ video game
+  {
+    id: 'adventure', name: 'Adventure', group: 'Video game',
+    blurb: 'Heroic ♭VI–♭VII fanfares, Lydian woods, lullabies and dungeons',
+    defaults: { color: 'triad', bpm: 120, length: 'loop' },
+    library: {
+      ionian: [
+        p('Heroic, adventurous', 'Overworld march (I–♭VII–♭VI–♭VII)', ['bVII', 'bVI', 'bVII']),
+        p('Triumphant fanfare', 'Treasure cadence (♭VI–♭VII–I)', ['bVI', 'bVII']),
+        p('Sweeping, open field', 'I–♭VII–IV', ['bVII', 'IV']),
+        p('Gentle, royal', 'Lullaby sway', ['V', 'IV', 'V']),
+        p('Cosy, village', 'Village waltz', ['IV', 'I', 'V']),
+        p('Warm, homely', 'I–vi–IV–V', ['vi', 'IV', 'V']),
+        p('Shimmering, magical', 'Sparkling maj7 swap', ['IVmaj7', 'Imaj7', 'IVmaj7']),
+        p('Playful, shop', 'ii–V shop loop', ['ii7', 'V7']),
+      ],
+      lydian: [
+        p('Playful, mysterious', 'Forest maze (I–II)', ['II']),
+        p('Whimsical, wandering', 'I–II–iii–II', ['II', 'iii', 'II']),
+        p('Sacred, wondrous', 'Temple light (I–II–V)', ['II', 'V']),
+      ],
+      dorian: [
+        p('Mischievous, stormy', 'Stormy waltz (i–IV)', ['IV']),
+        p('Nomadic, desert', 'i–♭VII–IV', ['bVII', 'IV']),
+      ],
+      aeolian: [
+        p('Brave, determined', 'Dungeon march (i–♭VI–♭VII)', ['bVI', 'bVII']),
+        p('Sad, ruined kingdom', 'i–♭VI–♭III–♭VII', ['bVI', 'bIII', 'bVII']),
+        p('Lonely, ancient', 'i–iv–i–♭VII', ['iv', 'i', 'bVII']),
+      ],
+      harmonic: [
+        p('Sinister, villain', 'Dark lord (i–♭VI–V)', ['bVI', 'V']),
+        p('Tense, boss fight', 'i–iv–V', ['iv', 'V']),
+        p('Creeping, haunted', 'i–vii°7', ['vii°7']),
+      ],
+      phrygian: [
+        p('Eerie, underground', 'Cave half-step (i–♭II)', ['bII']),
+        p('Ominous, ancient', 'i–♭II–♭III–♭II', ['bII', 'bIII', 'bII']),
+      ],
+    },
+  },
+  {
+    id: 'vampirehunter', name: 'Vampire Hunter', group: 'Video game',
+    blurb: 'Gothic harmonic minor, baroque sequences and driving rock',
+    defaults: { color: 'triad', bpm: 150, length: 'loop' },
+    library: {
+      aeolian: [
+        p('Driving, heroic', 'Whip-crack rock (i–♭VI–♭VII)', ['bVI', 'bVII']),
+        p('Dramatic, descending', 'Andalusian (i–♭VII–♭VI–V)', ['bVII', 'bVI', 'V']),
+        p('Tragic, gothic', 'i–♭VII–♭VI–♭VII', ['bVII', 'bVI', 'bVII']),
+        p('Epic, castle gates', 'i–♭VI–♭III–♭VII', ['bVI', 'bIII', 'bVII']),
+        p('Baroque, relentless', 'Circle of fifths',
+          ['iv', 'bVII', 'bIII', 'bVI', 'ii°', 'V']),
+        p('Noble, hopeful', 'Ends on the relative major', ['bVI', 'bVII', 'bIII'], O),
+      ],
+      harmonic: [
+        p('Gothic, dramatic', 'i–iv–V', ['iv', 'V']),
+        p('Neoclassical, dark', 'Neapolitan (♭II–V)', ['bII', 'V']),
+        p('Operatic, doomed', '♭VI–V', ['bVI', 'V']),
+        p('Cathedral organ', 'i–vii°7', ['vii°7']),
+        p('Baroque cadence', 'i–iv–vii°7–V7', ['iv', 'vii°7', 'V7']),
+        p('Haunted ballroom', 'i–♭VI–iv–V7', ['bVI', 'iv', 'V7']),
+      ],
+      phrygian: [
+        p('Menacing, clocktower', 'Phrygian half-step (i–♭II)', ['bII']),
+        p('Ritual, ominous', '♭VI–♭II', ['bVI', 'bII']),
+      ],
+      dorian: [
+        p('Cool, nocturnal', 'Moonlit groove (i–IV)', ['IV']),
+        p('Smooth, dangerous', 'i7–IV7–♭VII', ['IV7', 'bVII']),
+      ],
+    },
+  },
+
+  // The two styles below are transcriptions of actual tracks, mostly from
+  // Hooktheory TheoryTabs (converted to major-relative numerals, inversions
+  // dropped, long sections trimmed to their core phrase). Song names say
+  // where each one comes from.
+  {
+    id: 'zelda', name: 'Zelda', group: 'Video game',
+    blurb: 'Progressions transcribed from Koji Kondo\'s Zelda scores',
+    defaults: { color: 'triad', bpm: 120, length: 'loop' },
+    library: {
+      ionian: [
+        p('Heroic, adventurous', 'Overworld theme (Zelda 1)',
+          ['bVI', 'bIII', 'bII', 'i', 'V/V', 'V']),
+        p('Bold fanfare', 'Overworld intro (Zelda 1)', ['bVII', 'bVI', 'V']),
+        p('Playful, lively', 'Kokiri Forest chorus (OoT)', ['IV', 'V', 'IV', 'V', 'bVI', 'bVII']),
+        p('Mischievous, bouncy', 'Lost Woods (OoT)', ['IV', 'I', 'ii7', 'V', 'I', 'vi', 'ii7', 'V']),
+        p('Tender, royal', 'Zelda\'s Lullaby verse (OoT)',
+          ['IVmaj7', 'V', 'IVmaj7', 'V', 'iii7', 'bIIImaj7', 'ii7', 'V7']),
+        p('Graceful, nostalgic', 'Zelda\'s Lullaby chorus (OoT)',
+          ['IVmaj7', 'iii7', 'ii7', 'Imaj7', 'IVmaj7', 'iii7', 'bIIImaj7', 'ii7', 'V']),
+        p('Dreamy, wistful', 'Title theme (OoT)', ['IVmaj7', 'Imaj9']),
+        p('Gentle, enchanted', 'Fairy theme (ALttP)', ['IV6', 'iii', 'ii6', 'I6']),
+        p('Gentle, enchanted', 'Fairy theme, second half (ALttP)',
+          ['IV6', 'iii', 'ii6', 'I6', 'IV6', 'V7/ii', 'ii', 'V7']),
+      ],
+      lydian: [
+        p('Floating, royal', 'Zelda\'s Lullaby, Lydian reading (OoT)', ['II', 'Imaj7', 'II']),
+      ],
+      mixolydian: [
+        p('Carefree, village', 'Kokiri Forest verse (OoT)', ['bVII']),
+      ],
+      dorian: [
+        p('Dark, determined', 'Dark World (ALttP)', ['IV', 'bVImaj7', 'bVII']),
+        p('Brooding, rising', 'Dark World pre-chorus (ALttP)', ['bIII', 'IV', 'bVImaj7', 'bVII']),
+        p('Woodsy, stately', 'Minuet of Forest (OoT)', ['IV7', 'i', 'IV7', 'bVI', 'bVII', 'I'], O),
+        p('Whirling, stormy', 'Windmill Hut (OoT)', ['ii', 'bIII', 'ii']),
+      ],
+      aeolian: [
+        p('Stormy, mischievous', 'Song of Storms (OoT)',
+          ['ii', 'bIII', 'ii', 'bVImaj7', 'bIII', 'bVImaj7', 'V']),
+        p('Mournful, healing', 'Song of Healing (MM)',
+          ['bVI', 'V', 'bVI', 'V', 'iv7', 'bIIImaj7', 'iv7', 'bIII'], O),
+        p('Aching, bittersweet', 'Song of Healing chorus (MM)',
+          ['bIImaj7', 'i7', 'bvii7', 'bVImaj7', 'bIImaj7', 'i7', 'bIImaj7', 'iiø7', 'V']),
+        p('Mystical, timeless', 'Nayru\'s Song (Oracle of Ages)', ['v', 'i', 'v', 'iv', 'v', 'bVII']),
+      ],
+      harmonic: [
+        p('Solemn, sacred', 'Sanctuary (ALttP)', ['bVI', 'V', 'bVI', 'V', 'bVImaj7', 'V7']),
+        p('Creeping, dread', 'Dungeon (Zelda 1)', ['bVI', 'V', 'IV', 'iv', 'i', 'V7', 'vii°7']),
+        p('Tense, castle alarm', 'Hyrule Castle chorus (ALttP)', ['V7/V', 'vii°', 'i', 'iv', 'bIII', 'iiø7']),
+      ],
+      phrygian: [
+        p('Sneaking, ominous', 'Hyrule Castle verse (ALttP)', ['bvii', 'i', 'bIII', 'bII']),
+      ],
+    },
+  },
+  {
+    id: 'castlevania', name: 'Castlevania', group: 'Video game',
+    blurb: 'Progressions transcribed from Castlevania soundtracks',
+    defaults: { color: 'triad', bpm: 140, length: 'loop' },
+    library: {
+      aeolian: [
+        p('Driving, heroic', 'Vampire Killer (Castlevania)', ['bVImaj7', 'bVII']),
+        p('Tense, climbing', 'Vampire Killer, B section (Castlevania)',
+          ['bVImaj7', 'i', 'bVImaj7', 'vii°', 'i', 'ii°', 'V']),
+        p('Stalking, ominous', 'Stalker (Castlevania)',
+          ['bVImaj7', 'i', 'bVImaj7', 'v', 'bVI', '#iv°', 'V']),
+        p('Tragic, driving', 'Bloody Tears chorus (Castlevania)', ['bVII', 'bVImaj7', 'iv', 'V7']),
+        p('Tragic, descending', 'Bloody Tears turnaround (Castlevania)', ['bVII', 'bVI', 'V']),
+        p('Haunting, restless', 'Bloody Tears (Simon\'s Quest)', ['v', 'i', 'bVII', 'bVI', 'v']),
+        p('Brooding, rising', 'Bloody Tears intro (Castlevania)', ['bIII', 'iv', 'v']),
+        p('Epic, relentless', 'Divine Bloodlines (Rondo of Blood)', ['bVII', 'bVI', 'iv', 'v']),
+        p('Grim, determined', 'Castle Corridor (Aria of Sorrow)', ['bVII', 'bVImaj7', 'Vsus4', 'V7']),
+        p('Noble, dramatic', 'Iron-Blue Intention (Bloodlines)',
+          ['iv', 'iiø7', 'i', 'bVI', 'bVII', 'v', 'bVI', 'iv', 'V']),
+        p('Elegant, sweeping', 'Dance of Gold (SotN)',
+          ['iv', 'i', 'bVII', 'bIII', 'V7/iv', 'iv', 'bVII7', 'bIIImaj7', 'bVImaj7', 'V7/V', 'V']),
+        p('Melancholic, gothic', 'Lost Painting chorus (SotN)',
+          ['IV', 'i', 'IV', 'bVI', 'v', 'iv', 'bIII', 'bII', 'V']),
+      ],
+      harmonic: [
+        p('Funereal, grand', 'Requiem for the Gods (SotN)',
+          ['bVI', 'V', 'i', 'V7/iv', 'iv', 'ii°', 'bII', 'V7']),
+        p('Melancholic, nocturnal', 'Moonlight Nocturne (SotN)', ['bVI', 'i', '#iv°', 'V']),
+        p('Frantic, baroque', 'Big Battle (Castlevania III)', ['iiø7', 'V7/iv', 'iv', '#iv°', 'V']),
+        p('Ominous, chromatic', 'Overture (Castlevania III)', ['V/V', 'i', 'V/V', 'bII']),
+      ],
+      dorian: [
+        p('Lavish, mysterious', 'Marble Gallery (SotN)', ['bVImaj7', 'II', 'bII', 'i', 'IV']),
+      ],
+    },
+  },
+  // No harmonic analyses of Double Dragon exist online. These come from
+  // fan-sequenced VGMusic MIDIs (roots from the bass channel, qualities from
+  // the other voices), cross-checked against each other and gametabs.net
+  // bass/guitar tabs. Kept where 2+ sources agree, unless marked single.
+  {
+    id: 'doubledragon', name: 'Double Dragon', group: 'Video game',
+    blurb: 'NES Double Dragon I & II and Super Double Dragon, from fan MIDIs and tabs',
+    defaults: { color: 'triad', bpm: 150, length: 'loop' },
+    library: {
+      aeolian: [
+        // DD2's title reuses this progression a fourth lower.
+        p('Bold, streetwise', 'Title theme (DD1, DD2)', ['bVII', 'bIII', 'IV5', 'bVI', 'Vsus2']),
+        p('Brooding, restless', 'Title theme B section (DD1)',
+          ['bII', 'bVIIsus4', 'v', 'bVI', 'iv', 'bIII', 'iv', 'v', 'bVII']),
+        p('Tough, pounding', 'Mission 1 (DD1)', ['bVI', 'V']),
+        p('Tough, rising', 'Mission 1, part 2 (DD1)', ['bVI', 'bVII']),
+        // Also Super DD's Mission 3, which remakes this theme.
+        p('Dramatic, chromatic', 'Mission 1, part 3 (DD1)',
+          ['biii', 'bII', 'VII', 'bVII', 'i', 'bVII', 'bVI', 'V']),
+        p('Dark, cavernous', 'Mission 3, Caverynth (DD1)', ['bVI', 'iv', 'bVII']),
+        p('Tense, trapped', 'Mission 7, Trap Room (DD2)', ['bIII', 'i', 'bIII', 'iv']),
+        p('Ominous, wandering', 'Mission 5, Forest of Death (DD2, single source)',
+          ['bIII', 'i', 'bIII', 'bVI', 'v', 'IV', 'V']),
+        p('Eerie, descending', 'Mission 8, Hall of Illusions (DD2, single source)',
+          ['iv', 'bIII', 'ii°', 'v']),
+        p('Driving, rising', 'Mission 1 (Super DD)',
+          ['IV5', 'v', 'bVIsus4', 'i', 'IV5', 'v', 'bVIsus4', 'bVII']),
+        p('Urgent, falling', 'Mission 2, Airport (Super DD)', ['bVI', 'v', 'iv', 'bVI']),
+        p('Gritty, pushing', 'Mission 4 (Super DD)', ['v', 'iv', 'bVI']),
+      ],
+      phrygian: [
+        p('Menacing, descending', 'Mission 1, Into the Turf (DD2)',
+          ['bVII5', 'i5', 'bVII5', 'bVI5', 'bV5', 'bVI5']),
+      ],
+      ionian: [
+        p('Bright, heroic', 'Mission 4, Undersea Base (DD2)', ['IV', 'I', 'IV', 'VI']),
+        p('Warm, triumphant', 'Ending (Super DD, single source)',
+          ['vi', 'I', 'iii', 'I', 'vi', 'I', 'ii', 'bVII']),
+      ],
+    },
+  },
 ];

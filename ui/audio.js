@@ -47,8 +47,30 @@ function note(midi, when, dur, gain) {
     o.connect(og).connect(env);
     o.start(when);
     o.stop(when + dur + 0.5);
-    voices.push(o);
+    track(o);
   }
+}
+
+/** Remembers a running oscillator for stop(), forgetting it once it ends
+ *  (the play-along loop would otherwise collect them forever). */
+function track(o) {
+  voices.push(o);
+  o.onended = () => { const i = voices.indexOf(o); if (i >= 0) voices.splice(i, 1); };
+}
+
+/** Metronome tick; the accented one is higher. */
+function click(when, accent) {
+  const c = audio();
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = 'square';
+  o.frequency.value = accent ? 1760 : 1175;
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(0.1, when + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
+  o.connect(g).connect(master);
+  o.start(when);
+  o.stop(when + 0.08);
+  track(o);
 }
 
 export function playChord(chord, when = 0, dur = 1.1) {
@@ -56,6 +78,66 @@ export function playChord(chord, when = 0, dur = 1.1) {
   const t = Math.max(c.currentTime + 0.01, when || 0);
   const notes = voice(chord);
   notes.forEach((m, i) => note(m, t, dur, (i === 0 ? 0.16 : 0.11) / Math.sqrt(notes.length / 3)));
+}
+
+/** One single note (MIDI number), e.g. a note of a scale. */
+export function playNote(midi, dur = 0.7) {
+  note(midi, audio().currentTime + 0.01, dur, 0.18);
+}
+
+/** A chord, then a single note on top while the chord still rings. */
+export function playOver(chord, midi, delay = 0.9) {
+  stop();
+  const t = audio().currentTime + 0.05;
+  center = 62;
+  playChord(chord, t, delay + 1.4);
+  note(midi, t + delay, 1.4, 0.2);
+}
+
+/** Plays single notes in sequence, eighth notes at `bpm`; onStep(i) fires as
+ *  each one sounds, onEnd() after the last. */
+export function playLine(midis, bpm, onStep, onEnd) {
+  stop();
+  const c = audio();
+  const step = 60 / bpm / 2;
+  const start = c.currentTime + 0.05;
+  midis.forEach((m, i) => {
+    note(m, start + i * step, step * 0.85, 0.18);
+    timers.push(setTimeout(() => onStep(i), (0.05 + i * step) * 1000));
+  });
+  timers.push(setTimeout(onEnd, (0.05 + midis.length * step) * 1000 + 300));
+}
+
+/** Backing track: a one-bar count-in, then the chords on a loop until stop().
+ *  beats[i]: beats per chord. line: optional MIDI note per chord played on
+ *  top (the guide-tone line). onCount(n) fires on each count-in beat,
+ *  onStep(i) as chord i sounds. */
+export function playAlong({ chords, beats, bpm, line = null, onCount, onStep }) {
+  stop();
+  const c = audio();
+  const beat = 60 / bpm;
+  const ms = (t) => Math.max(0, (t - c.currentTime) * 1000);
+  const start = c.currentTime + 0.1;
+  for (let n = 0; n < 4; n++) {
+    click(start + n * beat, n === 0);
+    timers.push(setTimeout(() => onCount?.(n), ms(start + n * beat)));
+  }
+  const total = beats.reduce((a, b) => a + b, 0) * beat;
+  const pass = (from) => {
+    timers = timers.slice(-64); // fired timers from earlier passes
+    center = 62;
+    let t = from;
+    chords.forEach((ch, i) => {
+      const len = beats[i] * beat, at = t;
+      playChord(ch, at, len * 0.92);
+      if (line) note(line[i], at, len * 0.95, 0.2);
+      timers.push(setTimeout(() => onStep(i), ms(at)));
+      t += len;
+    });
+    // Schedule the next pass just before this one ends.
+    timers.push(setTimeout(() => pass(from + total), ms(from + total - 0.3)));
+  };
+  pass(start + 4 * beat);
 }
 
 export function stop() {

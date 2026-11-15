@@ -94,6 +94,10 @@
 
   <main>
     <div class="topbar">
+      <div class="seg views" id="view">
+        <button data-view="chords">Chords</button>
+        <button data-view="sax">Sax</button>
+      </div>
       <div class="title">
         <h2 id="keyTitle"></h2>
         <p id="keyFeel"></p>
@@ -107,9 +111,12 @@
         <span><svg width="26" height="12"><path d="M1 9C10 9 14 3 22 3" class="lg-hint"/><path d="M19 0l5 3-5 3" class="lg-hint" style="stroke-dasharray:none"/></svg>could continue</span>
         <span class="hint">Click a chord to hear it · right-click to play its progression · Ctrl + wheel to zoom</span>
       </div>
+      <div class="saxbar" id="saxbar"></div>
     </div>
 
     <div class="canvas" id="canvas"><svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg></div>
+
+    <section class="horn" id="horn"></section>
 
     <footer class="detail" id="detail"></footer>
   </main>

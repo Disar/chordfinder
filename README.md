@@ -11,7 +11,7 @@ Pick a key and a mode, and Chordfinder draws a map of progressions that start on
 
 ## Features
 
-- **Styles.** Pick a style from the dropdown and the whole map is rebuilt from that genre's own progressions and mood labels: **Theory**, **Pop**, **EDM**, **Kawaii future bass**, **Lo-fi / neo-soul**, **Rock**, **Ska**, **Ska-punk**, **Blues**, **Jazz**, **Cinematic**, **Synthwave**, **J-pop / anime**, **Gospel**, **Metal** and **Flamenco**. Each style also sets a fitting tempo, chord colour and chord length — 12-bar blues in dominant 7ths, Royal Road and *Just the Two of Us* moves in future bass, power-chord Phrygian riffs in metal, the Andalusian cadence in flamenco.
+- **Styles.** Pick a style from the dropdown and the whole map is rebuilt from that genre's own progressions and mood labels: **Theory**, **Pop**, **EDM**, **Kawaii future bass**, **Lo-fi / neo-soul**, **Rock**, **Ska**, **Ska-punk**, **Blues**, **Jazz**, **Cinematic**, **Synthwave**, **J-pop / anime**, **Gospel**, **Metal** and **Flamenco**, plus a **Video game** group: **Adventure** and **Vampire Hunter** (genre idioms) and **Zelda**, **Castlevania** and **Double Dragon** (transcribed from real tracks, each named). Each style also sets a fitting tempo, chord colour and chord length — 12-bar blues in dominant 7ths, Royal Road and *Just the Two of Us* moves in future bass, power-chord Phrygian riffs in metal, the Andalusian cadence in flamenco.
 - **Any key, any mode.** Choose the root on a piano keyboard and a mode: Ionian (major), Dorian, Phrygian, Lydian, Mixolydian, Aeolian (natural minor), Locrian, harmonic minor, melodic minor or Phrygian dominant. Notes are spelled correctly for the key (E♭ Dorian, not D♯ Dorian).
 - **Progressions grounded in theory.** Each mode comes with well-known progressions — authentic and plagal cadences, ii–V–I, the Andalusian cadence, the circle of fifths, Pachelbel's canon, Dorian and Mixolydian vamps, the Phrygian half-step pull and more.
 - **A branching map.** Progressions that share opening chords share nodes, so variations branch off exactly where they diverge. Arrows show the order of the chords.
@@ -28,6 +28,21 @@ Pick a key and a mode, and Chordfinder draws a map of progressions that start on
 - **Native and light.** A ~3 MB executable that starts instantly and uses about 45 MB of RAM, with a title bar that matches the dark theme on Windows 11.
 
 ![Ska-punk in C Ionian with the parallel-minor list open, showing C Aeolian's progressions](docs/parallel-shift.png)
+
+### Sax view
+
+Switch the top bar from **Chords** to **Sax** for a practice view aimed at saxophone students.
+
+- **Your instrument, your pitch.** Soprano, alto, tenor or baritone, shown in written or concert pitch. The root picker stays in concert pitch; chord symbols and keys transpose properly (concert B major's V on alto is E♭, not D♯).
+- **Range grid.** Every note in the sax range (written B♭3–F♯6), one row per octave, with the octave-key and palm-key registers marked. Note names as letters, Dutch (Cis, Bes) or fixed do, with optional movable do.
+- **Scales.** The mode, its pentatonics and the blues scale, played back on demand.
+- **Chord tones and chord-scales.** Click a chord in the progression bar to see its chord tones, guide tones (3rd and 7th) and the scale to play over it — borrowed chords show exactly which notes change.
+- **Guide-tone line and play-along.** A smooth guide-tone line through the progression and a looping backing track with count-in to practise it over (Space toggles it).
+- **Staff notation.** The scale or chord arpeggio and the progression as a lead sheet, with the right key signature and clef for your instrument.
+- **Fingerings.** A fingering diagram for any hovered note (standard plus common alternates) and an optional strip of mini diagrams under the staff.
+- **Tuner and feedback.** Turn on the microphone to see the note you play, play phrases back by ear, or get feedback while playing along. Nothing is recorded or stored.
+- **Practice mode.** Ear and reading drills — scale degrees after a cadence, chord tones over a chord, reading notes from the staff (answer by name or by playing it) — with levels and scores.
+- **Practice sheet and melody MIDI.** Print the staves with the guide-tone line, or drag the scale or guide-tone line out as MIDI.
 
 ## Download
 
@@ -60,6 +75,10 @@ The builds aren't code-signed, so your system may warn on first launch:
 | Drag **⠿ MIDI** | Drop the selected progression into your DAW |
 | Ctrl + mouse wheel | Zoom the map |
 | **Settings** section | Return-to-root style (arrow or R node), chord length (2 beats or 1-bar loop), detailed or compact view |
+| **Chords \| Sax** switch | Switch between the progression map and the sax view |
+| Sax view: **Explore \| Practice** | Explore scales and chords, or run the practice drills (keys 1–9/0 answer, R replays, Space next) |
+| Sax view: **Options ▾** | Note names, movable do, what to show (staff, grid or both), fingering strip |
+| Sax view: **🖨 Practice sheet** | Print the staves with the guide-tone line |
 
 In the map, a solid arrow leads to the next chord, an **R** node or dashed arrow means *resolves to the root*, a `‖` bar means *ends here*, a dotted line means *could continue*, and a dashed border marks a borrowed chord.
 
@@ -87,11 +106,11 @@ The app is written to `target/release/chordfinder.exe`. For a debug build that o
 npm test
 ```
 
-The tests check note spelling, chord building, every key × mode × option combination, the layout, the borrowed-chord rules, and the MIDI files byte by byte.
+The tests check note spelling, chord building, every key × mode × option combination, the layout, the borrowed-chord rules, the MIDI files byte by byte, and the sax view's transposition, staff layout, fingerings, pitch detection and drills.
 
 **Releases**
 
-[`.github/workflows/build.yml`](.github/workflows/build.yml) builds Windows, macOS and Linux versions on GitHub Actions. Push a tag that matches `version` in `tauri.conf.json` (for example `v0.2.0`) to get a draft release with all files attached, or use **Run workflow** on the Actions tab for a test build.
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds Windows, macOS and Linux versions on GitHub Actions. Push a tag that matches `version` in `tauri.conf.json` (for example `v0.3.0`) to get a draft release with all files attached, or use **Run workflow** on the Actions tab for a test build.
 
 ## How it works
 
@@ -101,7 +120,10 @@ The tests check note spelling, chord building, every key × mode × option combi
 | `ui/styles.js` | The genre styles: each one's progressions per mode and its defaults |
 | `ui/graph.js` | Merges progressions into a branching tree and lays it out |
 | `ui/midi.js` | Chord voicing (shared with the synth) and the MIDI file writer |
-| `ui/audio.js` | A tiny Web Audio synth for previews |
+| `ui/audio.js` | A tiny Web Audio synth for previews and play-along |
+| `ui/horn.js`, `ui/staff.js`, `ui/fingering.js` | The sax view: transposition, scales and chord-scales, staff layout, fingering charts |
+| `ui/pitch.js`, `ui/mic.js`, `ui/mic-worklet.js` | The tuner: pitch detection and microphone capture |
+| `ui/quiz.js` | The practice drills and scoring |
 | `ui/app.js`, `ui/index.html`, `ui/style.css` | The interface |
 | `src/main.rs` | The native window, title-bar colours and the MIDI drag-out |
 
@@ -115,7 +137,7 @@ p('Bittersweet, tender', 'Borrowed minor iv', ['IV', 'iv']),
 
 ## Platform support
 
-Chordfinder is developed and tested on Windows. The interface itself is cross-platform, but dragging MIDI out of the app and the themed title bar are currently Windows-only.
+Chordfinder is developed and tested on Windows. The interface itself is cross-platform, but dragging MIDI out of the app and the themed title bar are currently Windows-only. The microphone and printing have not been tested on macOS or Linux yet.
 
 ## License
 

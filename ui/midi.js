@@ -67,6 +67,42 @@ export function progressionToMidi(chords, { bpm = 96, beats = 2, name = 'Chordfi
   ]);
 }
 
+const u32 = (n) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+const chunk = (id, data) => [...ascii(id), ...u32(data.length), ...data];
+
+/** General MIDI programs (0-based) for each sax. */
+export const GM_SAX = { soprano: 64, alto: 65, tenor: 66, bari: 67 };
+
+/** A melody as MIDI. notes: [{ midi, beats, marker? }] in sounding pitch;
+ *  a marker names the chord the note belongs to. With `chords` (and their
+ *  `chordBeats`) it is a format-1 file with a second track for the chords,
+ *  so they can be muted or deleted separately. */
+export function melodyToMidi(notes, { bpm = 96, name = 'Chordfinder', program = 65, chords = null, chordBeats = null } = {}) {
+  const lead = [];
+  const meta = (ev, type, data) => ev.push(0, 0xff, type, ...vlq(data.length), ...data);
+  meta(lead, 0x03, ascii(asciiChord(name)));
+  const tempo = Math.round(60_000_000 / bpm);
+  meta(lead, 0x51, [(tempo >> 16) & 0xff, (tempo >> 8) & 0xff, tempo & 0xff]);
+  meta(lead, 0x58, [4, 2, 24, 8]);
+  lead.push(0, 0xc0, program & 0x7f);
+  for (const n of notes) {
+    if (n.marker) meta(lead, 0x06, ascii(asciiChord(n.marker)));
+    lead.push(0, 0x90, n.midi, 100, ...vlq(Math.round(PPQ * n.beats)), 0x80, n.midi, 64);
+  }
+  lead.push(0, 0xff, 0x2f, 0);
+  if (!chords) return new Uint8Array([...chunk('MThd', [0, 0, 0, 1, (PPQ >> 8) & 0xff, PPQ & 0xff]), ...chunk('MTrk', lead)]);
+
+  const back = [];
+  meta(back, 0x03, ascii('Chords'));
+  back.push(0, 0xc1, 0); // piano on channel 2
+  voiceSequence(chords).forEach((vs, i) => {
+    vs.forEach((m, j) => back.push(0, 0x91, m, j === 0 ? 80 : 70));
+    vs.forEach((m, j) => back.push(...vlq(j === 0 ? Math.round(PPQ * chordBeats[i]) : 0), 0x81, m, 64));
+  });
+  back.push(0, 0xff, 0x2f, 0);
+  return new Uint8Array([...chunk('MThd', [0, 1, 0, 2, (PPQ >> 8) & 0xff, PPQ & 0xff]), ...chunk('MTrk', lead), ...chunk('MTrk', back)]);
+}
+
 /** A file name that is safe on every OS, e.g. "Eb Dorian - Modal rock.mid". */
 export function midiFileName(keyName, modeName, branchName) {
   const raw = asciiChord(`${keyName} ${modeName} - ${branchName}`);

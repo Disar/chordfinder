@@ -37,6 +37,14 @@ fn drag_midi(window: WebviewWindow, name: String, bytes: Vec<u8>) -> Result<(), 
     result
 }
 
+/// Opens the print dialog for the practice sheet. Only needed on macOS,
+/// where WKWebView ignores `window.print()`; the UI calls that directly
+/// elsewhere.
+#[tauri::command]
+fn print_page(window: WebviewWindow) -> Result<(), String> {
+    window.print().map_err(|e| e.to_string())
+}
+
 fn midi_dir() -> PathBuf {
     let dir = std::env::temp_dir().join("Chordfinder");
     let _ = fs::create_dir_all(&dir);
@@ -124,7 +132,7 @@ fn main() {
             let _ = app; // used only on Windows
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![drag_midi])
+        .invoke_handler(tauri::generate_handler![drag_midi, print_page])
         .run(tauri::generate_context!());
 
     if let Err(e) = result {
