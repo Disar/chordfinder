@@ -35,7 +35,7 @@ npm run icon             # regenerate icons
   needs `cargo build --release` before the native app shows it.
 - **A running `chordfinder.exe` locks the file** → build fails with
   "Access is denied (os error 5)". Check `Get-Process chordfinder` first and
-  **ask the user before closing it** (they keep it open while testing).
+  close it if running (`Stop-Process -Name chordfinder`) — no need to ask.
 - From PowerShell, run cargo as `cmd /c "cargo build --release 2>&1"`;
   otherwise stderr progress makes `$?` report failure even on success.
 - **Browser preview**: `.claude/launch.json` has `ui-static` (python
@@ -78,6 +78,12 @@ npm run icon             # regenerate icons
 - **Borrowed chords** are limited to the curated `BORROWABLE` table (common
   modal-interchange chords per major/minor family). Broadening it produced
   unidiomatic suggestions — keep it curated.
+- **Parallel shift** (play panel, resolved branches only): `parallelShifts()`
+  in app.js offers up to 3 opposite-family modes (major ↔ minor, by tonic
+  case) that the style uses, ordered by `SHIFT_ORDER`. ▾ opens a list of that
+  mode's branches (`shiftMenu`); ▶ previews, right-click ▶ chains the
+  selected branch first, clicking a row switches mode and keeps the branch
+  (branch ids are template indexes, so they survive the switch).
 - Chords carry `source`: a parallel mode object (borrowed), `'secondary'`, or
   null; borrowed ones render with dashed borders.
 - **Persisted UI state** lives in `localStorage` key `chordfinder:state`.

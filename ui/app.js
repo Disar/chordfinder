@@ -238,9 +238,12 @@ function renderDetail() {
   const chip = (c, i, root) =>
     `<button class="chord${root ? ' root' : ''}${lent(c) ? ' borrowed' : ''}" data-i="${i}" title="${esc(chordTitle(c))}"><b>${esc(c.name)}</b><small>${esc(c.roman)}</small></button>`;
   const chips = seq.map((c, i) => chip(c, i, i === 0)).join('<span class="arrow">→</span>');
+  const shifts = parallelShifts();
   const ending = b.end === 'resolve'
     ? `<span class="arrow">→</span>${chip(t, seq.length, true)}<span class="arrow" title="Resolves to the root">↺</span>`
-    : '<span class="end" title="Ends here">‖</span>' + (b.next
+      + (shifts.modes.length ? `<span class="shift" id="shift"><span class="lbl">⇄ ${shifts.label}:</span>${shifts.modes.map((m) =>
+        `<button class="mode${m.id === shiftOpen ? ' open' : ''}" data-shift="${m.id}" title="${esc(m.tip)}" aria-expanded="${m.id === shiftOpen}">${esc(m.name)} ▾</button>`).join('')}${shiftMenu(shifts)}</span>` : '')
+    :'<span class="end" title="Ends here">‖</span>' + (b.next
       ? `<button class="cont" id="cont" title="${esc(hintText(b))}">⇢ could continue: ${b.next.home
         ? `resolve to ${esc(t.name)}`
         : `${esc(b.next.node.chord.name)} — ${esc(b.next.via.mood)}`}</button>`
@@ -272,12 +275,151 @@ function renderDetail() {
     renderDetail();
     focus(null);
   };
+  wireShift(shifts);
   $('bpm').oninput = (e) => { state.bpm = +e.target.value; $('bpmv').textContent = state.bpm; save(); };
   $('detail').querySelector('.row').onclick = (e) => {
     const c = e.target.closest('.chord');
     if (c) sound(+c.dataset.i >= seq.length ? t : seq[+c.dataset.i]);
   };
 }
+
+// Parallel modes to shift into after a resolved branch, most common first.
+const SHIFT_ORDER = {
+  major: ['aeolian', 'dorian', 'phrygian', 'harmonic', 'melodic', 'locrian'],
+  minor: ['ionian', 'mixolydian', 'lydian', 'phrygdom'],
+};
+const isMinorMode = (m) => m.tonic !== 'I';
+
+/** Modes on the same root with the opposite tonic quality (major ↔ minor)
+ *  that the current style has progressions for: up to three, each with its
+ *  own progression tree so the menu can list and preview its branches. */
+function parallelShifts() {
+  const { mode, style, key } = model.s;
+  const minor = isMinorMode(mode);
+  const usable = styleModes(style);
+  const modes = SHIFT_ORDER[minor ? 'minor' : 'major'].filter((id) => usable.includes(id)).slice(0, 3)
+    .map((id) => {
+      const m = MODES.find((x) => x.id === id);
+      const s = suggest({ ...state, modeId: id });
+      return { id, name: m.name, tonic: s.tonic, tree: buildTree(s.templates), tip: `Same root: ${key.name} ${m.name}` };
+    });
+  return { label: minor ? 'parallel major' : 'parallel minor', modes };
+}
+
+// The mode whose progression list is open above its shift button, if any.
+let shiftOpen = null;
+
+/** The open mode's progressions, one row each: colour dot, mood, preview
+ *  button and the chords in play-panel style. */
+function shiftMenu(shifts) {
+  const m = shifts.modes.find((x) => x.id === shiftOpen);
+  if (!m) return '';
+  const rows = m.tree.branches.map((b) => {
+    const seq = [m.tonic, ...b.chords].map((c, i) =>
+      `<span class="c${lent(c) ? ' borrowed' : ''}" data-i="${i}" title="${esc(chordTitle(c))}">${esc(c.name)}</span>`).join('<span class="arrow">→</span>');
+    const end = b.end === 'resolve' ? '<span class="arrow" title="Resolves to the root">↺</span>' : '<span class="end" title="Ends here">‖</span>';
+    return `<div class="srow" role="option" tabindex="-1" data-b="${b.id}" title="${esc(b.name)}">
+      <span class="dot" style="background:${PALETTE[b.lane % PALETTE.length]}"></span>
+      <span class="smood">${esc(b.mood)}</span>
+      <button class="sprev" title="Preview · right-click: play the selected progression first, then this one">▶</button>
+      <span class="sseq">${seq}${end}</span></div>`;
+  }).join('');
+  return `<div class="shiftmenu" role="listbox" aria-label="${esc(m.name)} progressions">${rows}</div>`;
+}
+
+function closeShift() {
+  if (shiftOpen === null) return;
+  shiftOpen = null;
+  stop();
+  renderDetail();
+}
+
+function wireShift(shifts) {
+  const el = $('shift');
+  if (!el) return;
+  const m = shifts.modes.find((x) => x.id === shiftOpen);
+  const rows = [...el.querySelectorAll('.srow')];
+  // Keep the menu inside the window: slide it left if it would overflow.
+  const menu = el.querySelector('.shiftmenu');
+  if (menu) {
+    const over = menu.getBoundingClientRect().right - (innerWidth - 12);
+    if (over > 0) menu.style.left = `${-over}px`;
+  }
+  el.onclick = (e) => {
+    const btn = e.target.closest('[data-shift]');
+    if (btn) {
+      shiftOpen = shiftOpen === btn.dataset.shift ? null : btn.dataset.shift;
+      stop();
+      renderDetail();
+      $('shift')?.querySelector('.srow')?.focus();
+      return;
+    }
+    const row = e.target.closest('.srow');
+    if (!row) return;
+    const b = m.tree.branches.find((x) => x.id === +row.dataset.b);
+    if (e.target.closest('.sprev')) previewShift(m, b, row);
+    else pickShift(m.id, b.id);
+  };
+  // Right-click ▶ plays the selected progression first, then this one.
+  el.oncontextmenu = (e) => {
+    const row = e.target.closest('.srow');
+    if (!row || !e.target.closest('.sprev')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    previewShift(m, m.tree.branches.find((x) => x.id === +row.dataset.b), row, true);
+  };
+  el.onkeydown = (e) => {
+    const i = rows.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); closeShift(); el.querySelector('.mode.open')?.focus(); }
+    else if (!rows.length) return;
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const n = e.key === 'ArrowDown' ? i + 1 : i - 1;
+      rows[(n + rows.length) % rows.length].focus();
+    } else if (e.key === 'Enter' && i >= 0) {
+      e.preventDefault();
+      pickShift(m.id, +rows[i].dataset.b);
+    } else if (e.key === ' ' && i >= 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      previewShift(m, m.tree.branches.find((x) => x.id === +rows[i].dataset.b), rows[i]);
+    }
+  };
+}
+
+/** Plays a branch of the other mode without switching to it. With chain,
+ *  the selected progression plays first, so you hear the shift itself. */
+function previewShift(m, b, row, chain = false) {
+  if (playing) halt();
+  const first = chain ? sequenceFor(selectedBranch()) : { chords: [], beats: [] };
+  const second = sequenceFor(b, m.tonic);
+  const chords = [...first.chords, ...second.chords], beats = [...first.beats, ...second.beats];
+  const n = first.chords.length;
+  const clear = () => document.querySelectorAll('#detail .playing').forEach((x) => x.classList.remove('playing'));
+  playSequence(chords, state.bpm, beats, (i) => {
+    clear();
+    if (i < n) $('detail').querySelector(`.row .chord[data-i="${i}"]`)?.classList.add('playing');
+    // The closing root chord (phrase length) lights up the first chip again.
+    else row.querySelector(`.c[data-i="${i - n > b.chords.length ? 0 : i - n}"]`)?.classList.add('playing');
+    showNow(chords[i]);
+  }, () => { clear(); showNow(null); });
+}
+
+/** Switches to the parallel mode with the chosen branch selected. */
+function pickShift(modeId, branchId) {
+  shiftOpen = null;
+  update({ modeId });
+  if (model.tree.branches.some((b) => b.id === branchId)) {
+    state.selected = branchId;
+    save();
+    renderDetail();
+    focus(null);
+  }
+}
+
+document.addEventListener('mousedown', (e) => {
+  if (shiftOpen !== null && !e.target.closest('#shift')) closeShift();
+});
 
 // ------------------------------------------------------------ MIDI drag-out
 
@@ -338,8 +480,7 @@ function wireMidiDrag(btn, b) {
  *  'phrase': 2 beats per chord, then back to the root if it resolves.
  *  'loop': 1 bar per chord, no closing chord, and the last chord held so the
  *  loop fills a whole number of 4-bar phrases (4 chords -> 4 bars, 5 -> 8). */
-function sequenceFor(b) {
-  const tonic = model.s.tonic;
+function sequenceFor(b, tonic = model.s.tonic) {
   const chords = [tonic, ...b.chords];
   const nodeIds = ['root', ...b.path.map((n) => n.id)];
   if (state.length === 'loop') {
@@ -418,7 +559,7 @@ function update(patch = {}) {
   if ('styleId' in patch && patch.styleId !== state.styleId) patch = { ...styleDefaults(patch.styleId), ...patch };
   const keyChanged = ['rootPc', 'modeId', 'modifier', 'styleId'].some((k) => k in patch && patch[k] !== state[k]);
   Object.assign(state, patch);
-  if (keyChanged) state.selected = 0;
+  if (keyChanged) { state.selected = 0; shiftOpen = null; }
   save();
   const s = suggest(state);
   const tree = buildTree(s.templates);
