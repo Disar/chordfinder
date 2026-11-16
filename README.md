@@ -16,7 +16,7 @@ Pick a key and a mode, and Chordfinder draws a map of progressions that start on
 - **Progressions grounded in theory.** Each mode comes with well-known progressions — authentic and plagal cadences, ii–V–I, the Andalusian cadence, the circle of fifths, Pachelbel's canon, Dorian and Mixolydian vamps, the Phrygian half-step pull and more.
 - **A branching map.** Progressions that share opening chords share nodes, so variations branch off exactly where they diverge. Arrows show the order of the chords. The root chord stays in view as you scroll down a long map.
 - **Mood labels.** Every branch is labelled with its mood and name, e.g. *"Bittersweet, tender — borrowed iv from Aeolian"*, and every ending is named from the actual chords (*Authentic cadence · V → I*, *Deceptive cadence*, *Picardy third* …).
-- **Endings that make sense.** Progressions that resolve show an arrow (or a small **R** node) back to the root. Ones that end elsewhere on purpose get a final barline — plus a dotted *could continue* line to where they would naturally go next.
+- **Endings that make sense.** Progressions that resolve show a small **R** node back at the root. Ones that end elsewhere on purpose get a final barline — plus a dotted *could continue* line to where they would naturally go next.
 - **Shift to the parallel mode.** When a progression resolves, the play panel offers the parallel minor (or major) modes on the same root, e.g. C Ionian → C Aeolian or C Dorian. Each one opens a list of that mode's progressions with their chords: click ▶ to preview one, right-click ▶ to hear your progression followed by it, or click the row to switch over.
 - **Alter the root chord.** Triad, 7th, dominant 7th, sus2, sus4, 6, add9, diminished, augmented or power chord. Some unlock extra branches: a dominant-7th root adds blues and gospel moves, a suspended root adds its resolution, an augmented root adds the line cliché.
 - **Borrowed chords.** Optionally branch every progression with chords borrowed from parallel modes (modal interchange): iv and ♭VI in major, Dorian's IV and harmonic minor's V in minor, the Neapolitan ♭II, and more. Borrowed chords are drawn with dashed borders and named after their source mode.
@@ -26,7 +26,8 @@ Pick a key and a mode, and Chordfinder draws a map of progressions that start on
 - **Drag MIDI into your DAW.** Drag the **⠿ MIDI** button into Ableton, FL Studio, Reaper, Bitwig or any DAW that accepts MIDI files. You get the progression exactly as it plays: same voicings, your tempo, chord names as markers.
 - **Phrases or loops.** Play and export a progression as a phrase (2 beats per chord, ending back on the root) or as a loop (1 bar per chord, padded to exactly 4 or 8 bars) that repeats seamlessly in your DAW.
 - **Easy on your drive.** The dragged MIDI file is a short-lived temporary file that Windows keeps in memory and that is deleted a minute after the drop.
-- **Native and light.** A ~3 MB executable that starts instantly and uses about 45 MB of RAM, with a title bar that matches the dark theme on Windows 11.
+- **Themes.** Eight colour themes — **Dark**, **Midnight**, **Forest**, **Twilight**, **Light**, **Pastel**, **Sepia** and **Mint** — and a choice of **Rounded** or **Boxy** corners.
+- **Native and light.** A ~3 MB executable that starts instantly and uses about 45 MB of RAM, with a title bar that follows the theme on Windows 11.
 
 ![Ska-punk in C Ionian with the parallel-minor list open, showing C Aeolian's progressions](docs/parallel-shift.png)
 
@@ -90,7 +91,7 @@ The builds aren't code-signed, so your system may warn on first launch:
 | **⇄ parallel minor / major** buttons | List the parallel mode's progressions: ▶ previews, right-click ▶ plays yours then that one, click a row to switch |
 | Drag **⠿ MIDI** | Drop the selected progression into your DAW |
 | Ctrl + mouse wheel | Zoom the map |
-| **Settings** section | Return-to-root style (arrow or R node), chord length (2 beats or 1-bar loop), detailed or compact view |
+| **Settings** section | Chord length (2 beats or 1-bar loop), detailed or compact view, theme, rounded or boxy corners |
 | **Names \| Guitar** in the play panel | Show a guitar chord diagram under each chord |
 | **Chords \| Sax \| Guitar** switch | Switch between the progression map, the sax view and the guitar view |
 | Sax view: **Explore \| Practice** | Explore scales and chords, or run the practice drills (keys 1–9/0 answer, R replays, Space next) |
