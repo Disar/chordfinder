@@ -92,3 +92,22 @@ test('strummed MIDI is a valid single-track file', () => {
   const off = [...bytes].filter((b, i) => b === 0x80 && i > 22).length;
   assert.equal(on, off);
 });
+
+test('custom patterns: typing, cycling, resizing', async () => {
+  const { customStrum, cleanSteps, cycleStep, resizeSteps } = await import('../ui/strum.js');
+  assert.equal(cleanSteps('d.du uDu'), 'D-DU-UDU');
+  assert.equal(cleanSteps('DXDX DXD'), 'DxDx-DxD');
+  assert.equal(cleanSteps('DDD'), null);
+  assert.equal(cleanSteps('D-Q-D-D-'), null);
+  assert.equal(cleanSteps('1324132413241324'), '1324132413241324');
+  assert.deepEqual(['D', 'U', 'x', '-', '3'].map((c) => cycleStep(c)), ['U', 'x', '-', 'D', 'D']);
+  assert.equal(cycleStep('D', true), '-');
+  assert.equal(resizeSteps('D-DU-UDU', 16), 'D---D-U---U-D-U-');
+  assert.equal(resizeSteps('D---D-U---U-D-U-', 8), 'D-DU-UDU');
+  const c = customStrum({ steps: 'bad' });
+  assert.equal(c.steps, 'D-D-D-D-');
+  assert.equal(customStrum({ steps: 'D-DU-UDUD-DU-UDU', swing: true }).swing, false); // swing is 8ths only
+  const bar = strumBar(customStrum({ steps: 'DUDUDUDU', swing: true, short: true }), C);
+  assert.equal(bar.length, 8);
+  assert.ok(bar.every((e) => e.dur <= 0.3));
+});

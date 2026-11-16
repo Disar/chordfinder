@@ -8,7 +8,7 @@ import { keySignature, layoutStaff, STAFF } from './staff.js';
 import { KEYS, DIAGRAM, fingeringsFor } from './fingering.js';
 import { startMic, stopMic, micOn } from './mic.js';
 import { freqOf } from './pitch.js';
-import { STRUMS, strumById, styleStrum, counts, strumProgression, strumNotes } from './strum.js';
+import { STRUMS, strumById, styleStrum, customStrum, cleanSteps, cycleStep, resizeSteps, counts, strumProgression, strumNotes } from './strum.js';
 import { FRET_DRILLS, FRET_LEVELS, PRACTICE_FRETS, fretDrillById, makeFretQuestion, isFretRight, pcName, nearestString } from './fretquiz.js';
 import { voicing, shapeText, baseFret, voicingMidi, alternates, voiceLead, scalePositions, shapeInPosition, shapePosition, positionTab, shapeTab, bassArpeggio, FRETTED, FRETS, INLAYS, fretboardView, scaleRun as fretRun } from './guitar.js';
 
@@ -38,7 +38,7 @@ const state = Object.assign(
     bars: 1, guideLine: false, show: 'both', underNames: true, strip: true,
     practice: false, drill: 'degree', levels: { degree: 0, tone: 0, read: 0 },
     // Guitar view
-    fretInst: 'guitar', fretLabels: 'names', lefty: false, gVoice: 'easy', gPos: 0, strum: 'auto',
+    fretInst: 'guitar', fretLabels: 'names', lefty: false, gVoice: 'easy', gPos: 0, strum: 'auto', customStrum: null,
     gPractice: false, gDrill: 'find', gLevels: { find: 0, name: 0 } },
   loadSaved(),
   { v: STATE_VERSION },
@@ -1423,9 +1423,10 @@ function renderGuitar() {
     ${isGuitar() ? `<div class="hplay gstrumrow">
       <label class="gpat">Strum <select id="gpattern" class="select" aria-label="Strumming pattern">
         <option value="auto"${state.strum === 'auto' ? ' selected' : ''}>Auto: ${esc(styleStrum(state.styleId).name)}</option>
-        ${STRUMS.map((x) => `<option value="${x.id}"${state.strum === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
-      ${strumStrip(currentStrum())}
-      <span class="gpattip">${esc(currentStrum().tip)}</span>
+        ${STRUMS.map((x) => `<option value="${x.id}"${state.strum === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}
+        <option value="custom"${state.strum === 'custom' ? ' selected' : ''}>Custom…</option></select></label>
+      ${strumStrip(currentStrum(), state.strum === 'custom')}
+      ${state.strum === 'custom' ? customStrumControls() : `<span class="gpattip">${esc(currentStrum().tip)}</span>`}
       ${midiButton('gmidi', 'Drag into your DAW: this progression strummed with this pattern, one pass (guitar sound)')}
     </div>` : ''}
     <div class="gmain">${card}<div class="neckbox">${neckSvg(v, shape, p.pos)}</div></div>
@@ -1435,7 +1436,23 @@ function renderGuitar() {
       <span class="hint">Click a note to hear it · hover to see the same note elsewhere on the neck</span>
     </div>`;
   $('gbpm').oninput = (e) => { state.bpm = +e.target.value; $('gbpmv').textContent = state.bpm; save(); };
-  if ($('gpattern')) $('gpattern').onchange = (e) => update({ strum: e.target.value });
+  if ($('gpattern')) $('gpattern').onchange = (e) => {
+    // A first Custom starts from the pattern that was showing.
+    const patch = { strum: e.target.value };
+    if (patch.strum === 'custom' && !state.customStrum) {
+      const c = currentStrum();
+      patch.customStrum = { steps: c.steps, swing: !!c.swing, short: !!c.short };
+    }
+    update(patch);
+  };
+  if ($('gsteps')) {
+    $('gsteps').onchange = (e) => {
+      const steps = cleanSteps(e.target.value);
+      if (steps) editCustomStrum({ steps });
+      else e.target.value = currentStrum().steps;
+    };
+    $('gsteps').onkeydown = (e) => { if (e.key === 'Enter') e.target.blur(); e.stopPropagation(); };
+  }
   if ($('gmidi')) wireMidiDrag($('gmidi'), () => strumMidi(guitarProgression()));
   $('gbranch').onchange = (e) => {
     stopGuitar();
@@ -1523,15 +1540,58 @@ function tabStaffSvg(g, n, current) {
 }
 
 /** The strumming pattern in use: the style's own ("Auto") or the one picked. */
-const currentStrum = () => (state.strum === 'auto' ? styleStrum(state.styleId) : strumById(state.strum));
+const currentStrum = () => (state.strum === 'auto' ? styleStrum(state.styleId)
+  : state.strum === 'custom' ? customStrum(state.customStrum) : strumById(state.strum));
 
 const STRUM_GLYPH = { D: '↓', U: '↑', x: '×', '-': '·' };
 
-/** The pattern as arrows over the count; `data-k` = step, lit while playing. */
-function strumStrip(pat) {
+/** The pattern as arrows over the count; `data-k` = step, lit while playing.
+ *  Editable (Custom): each step is a button that cycles on click. */
+function strumStrip(pat, edit = false) {
   const n = pat.steps.length, cnt = counts(pat);
-  return `<span class="strumbar${n === 16 ? ' s16' : ''}" title="${esc(pat.tip)}">${[...pat.steps].map((ch, i) =>
-    `<span class="sb${i % (n / 4) === 0 ? ' beat' : ''}${ch === '-' ? ' rest' : ''}" data-k="${i}"><b>${STRUM_GLYPH[ch] ?? ch}</b><small>${cnt[i]}</small></span>`).join('')}</span>`;
+  const tip = edit ? 'Click a step: ↓ down, ↑ up, × chuck, · rest (right-click goes back)' : pat.tip;
+  return `<span class="strumbar${n === 16 ? ' s16' : ''}${edit ? ' edit' : ''}" title="${esc(tip)}">${[...pat.steps].map((ch, i) =>
+    `<span class="sb${i % (n / 4) === 0 ? ' beat' : ''}${ch === '-' ? ' rest' : ''}" data-k="${i}"${edit ? ` data-cs="${i}"` : ''}><b>${STRUM_GLYPH[ch] ?? ch}</b><small>${cnt[i]}</small></span>`).join('')}</span>`;
+}
+
+/** Custom pattern controls: the steps as text, 8/16 steps, swing, palm mute. */
+function customStrumControls() {
+  const c = currentStrum();
+  const tog = (key, label, title, on, dis = false) =>
+    `<button class="gtog${on ? ' on' : ''}" data-ctog="${key}" title="${title}"${dis ? ' disabled' : ''}>${label}</button>`;
+  return `<span class="gcustom">
+    <input id="gsteps" class="gsteps" value="${c.steps}" maxlength="16" spellcheck="false" aria-label="Pattern steps"
+      title="Type 8 or 16 steps: D down, U up, x chuck, - rest, 1–6 pick one string (1 = lowest)">
+    ${tog('len', c.steps.length === 16 ? '16ths' : '8ths', 'Eighths or sixteenths', false)}
+    ${tog('swing', 'Swing', 'Swung eighths: long-short (8 steps only)', c.swing, c.steps.length !== 8)}
+    ${tog('short', 'Mute', 'Short, palm-muted hits', c.short)}
+  </span>`;
+}
+
+/** Changes the custom pattern; restarts the play-along so it is heard. */
+function editCustomStrum(patch) {
+  const was = gAlong;
+  update({ customStrum: { ...{ steps: currentStrum().steps, swing: false, short: false }, ...state.customStrum, ...patch } });
+  if (was) playGuitarAlong();
+}
+
+/** A click (or right-click, `back`) on the custom pattern's steps/toggles. */
+function customStrumClick(e, back = false) {
+  if (state.strum !== 'custom') return false;
+  const c = currentStrum();
+  const st = e.target.closest('[data-cs]');
+  if (st) {
+    const i = +st.dataset.cs, s = [...c.steps];
+    s[i] = cycleStep(s[i], back);
+    editCustomStrum({ steps: s.join('') });
+    return true;
+  }
+  const t = back ? null : e.target.closest('[data-ctog]');
+  if (!t) return false;
+  const k = t.dataset.ctog;
+  if (k === 'len') editCustomStrum({ steps: resizeSteps(c.steps, c.steps.length === 8 ? 16 : 8) });
+  else editCustomStrum({ [k]: !c[k] });
+  return true;
 }
 
 /** The progression strummed with the pattern, one pass, as guitar MIDI. */
@@ -1567,6 +1627,7 @@ function wireGuitar() {
   $('gview').onclick = (e) => {
     if (state.gPractice && fretQuizClick(e)) return;
     if (segClick(e)) return;
+    if (customStrumClick(e)) return;
     if (e.target.closest('#galong')) return gAlong ? stopGuitar() : playGuitarAlong();
     if (e.target.closest('#gplay')) return gPlaying ? stopGuitar() : playFretScale();
     const sc = e.target.closest('[data-scale]');
@@ -1598,6 +1659,7 @@ function wireGuitar() {
     const n = e.target.closest('.fnote, .snote, .tabn');
     if (n) playNote(+n.dataset.m);
   };
+  $('gview').oncontextmenu = (e) => { if (customStrumClick(e, true)) e.preventDefault(); };
   // Hovering a note rings every place the same pitch sits on the neck.
   // A staff or tab note marks its spot on the neck.
   $('gview').onmouseover = (e) => {

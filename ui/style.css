@@ -746,6 +746,13 @@ body[data-view="guitar"] .gview { display: grid; }
 .strumbar .sb.hit { background: #3a3220; }
 .strumbar .sb.hit b { color: var(--accent); }
 .gpattip { color: var(--faint); font-size: 12px; }
+.strumbar.edit .sb { cursor: pointer; user-select: none; }
+.strumbar.edit .sb:hover { background: var(--surface-2); }
+.gcustom { display: inline-flex; align-items: center; gap: 6px; }
+.gsteps { width: 150px; padding: 4px 6px; font: 12px ui-monospace, Consolas, monospace; letter-spacing: 1px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.gtog { padding: 4px 9px; font-size: 12px; color: var(--dim); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.gtog.on { color: var(--accent); border-color: var(--accent); }
+.gtog:disabled { opacity: .4; cursor: default; }
 .gview .midi { margin-left: auto; }
 .gview { --guide: #4cd99a; }
 .neck .ftarget { fill: transparent; cursor: pointer; }

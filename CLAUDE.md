@@ -167,6 +167,12 @@ panel, every mode selectable, controls in the header (`#gbar`: instrument
   chucks short and quiet, swing = off-beats at 2/3, `short` patterns
   clipped). onHit timers are scheduled after onStep so a chord change
   re-render doesn't wipe the first hit's highlight. Bass is unchanged.
+  Custom pattern (`strum: 'custom'`, `state.customStrum` = { steps,
+  swing, short }; `customStrum`/`cleanSteps`/`cycleStep`/`resizeSteps`
+  in strum.js): first pick seeds it from the pattern showing; the strip's
+  steps cycle ↓ ↑ × · on click (right-click back), a text field takes
+  typed steps (incl. 1–6 picks), 8ths/16ths, Swing, Mute toggles. Edits
+  restart a running play-along.
 - Phase 1 (done): neck, scales, labels, instruments, left-handed, play
   scale. Phase 2 (done): progression on the neck. Phase 3 (done):
   positions. Phase 4 (done): staff + tab. Phase 5 (done): strumming.

@@ -19,6 +19,37 @@ export const STRUMS = [
 ];
 export const strumById = (id) => STRUMS.find((s) => s.id === id) ?? STRUMS[0];
 
+/** A user-made pattern ({ steps, swing, short }, saved in the UI state) as
+ *  a pattern object. Bad input falls back to Quarters' steps. */
+export function customStrum(c = {}) {
+  const steps = cleanSteps(c.steps) ?? STRUMS[0].steps;
+  return {
+    id: 'custom', name: 'Custom', steps, swing: !!c.swing && steps.length === 8, short: !!c.short,
+    tip: 'Your own pattern: click a step to change it, or type it',
+  };
+}
+
+/** Typed steps → a valid pattern string (d/u any case, X, . or space = rest),
+ *  or null unless it is 8 or 16 valid steps. */
+export function cleanSteps(text) {
+  if (typeof text !== 'string') return null;
+  const s = text.replace(/[\s.]/g, '-').replace(/[du]/g, (c) => c.toUpperCase()).replace(/X/g, 'x');
+  return /^[DUx\-1-6]+$/.test(s) && (s.length === 8 || s.length === 16) ? s : null;
+}
+
+const CYCLE = ['D', 'U', 'x', '-'];
+/** The next step when a step is clicked: ↓ → ↑ → × → rest → ↓ (a pick → ↓). */
+export const cycleStep = (ch, back = false) => {
+  const i = CYCLE.indexOf(ch);
+  if (i < 0) return 'D';
+  return CYCLE[(i + (back ? CYCLE.length - 1 : 1)) % CYCLE.length];
+};
+
+/** Eighths ↔ sixteenths, keeping each hit on the same beat position. */
+export const resizeSteps = (steps, n) => (n === steps.length ? steps
+  : n === 16 ? [...steps].map((c) => `${c}-`).join('')
+    : [...steps].filter((_, i) => i % 2 === 0).join(''));
+
 /** The pattern each style starts with ("Auto"). */
 export const STYLE_STRUM = {
   theory: 'quarters', pop: 'folk', edm: 'eighths', kawaii: 'folk', lofi: 'picked', rock: 'eighths',
