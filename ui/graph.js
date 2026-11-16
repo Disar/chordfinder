@@ -107,31 +107,10 @@ export function layout(tree, { compact = false, returnStyle = 'line' } = {}) {
     n.y = TOP + n.lane * S.lane + S.label;
   }
 
-  const edges = nodes.filter((n) => n.parent).map((n) => {
-    const a = n.parent, x1 = a.x + W, y1 = a.y + H / 2, x2 = n.x - 3, y2 = n.y + H / 2;
-    // Branches share a vertical trunk just right of the fork node, so
-    // siblings overlap into one clean line instead of fanning out.
-    const tx = x1 + 16, r = 10;
-    const d = y1 === y2
-      ? `M${x1},${y1} L${x2},${y2}`
-      : `M${x1},${y1} L${tx - r},${y1} Q${tx},${y1} ${tx},${y1 + r} L${tx},${y2 - r} Q${tx},${y2} ${tx + r},${y2} L${x2},${y2}`;
-    return { to: n.id, from: a.id, branch: n.owner, d };
-  });
+  const edges = nodes.filter((n) => n.parent).map((n) =>
+    ({ to: n.id, from: n.parent.id, branch: n.owner, d: edgePath(n, W, H) }));
 
-  // Return arrows run down into the gutter under their lane, left to a rail
-  // beside the root, up, and into the root's left side.
-  const r = 8, ry = root.y + H / 2;
-  const returns = returning.map((b, i) => {
-    const sx = b.last.x + W / 2, sy = b.last.y + H;
-    const gy = b.last.y + H + S.gutter;
-    const rx = left - 22 - i * RAIL_GAP;
-    const d = [
-      `M${sx},${sy}`, `L${sx},${gy - r}`, `Q${sx},${gy} ${sx - r},${gy}`,
-      `L${rx + r},${gy}`, `Q${rx},${gy} ${rx},${gy - r}`,
-      `L${rx},${ry + r}`, `Q${rx},${ry} ${rx + r},${ry}`, `L${root.x - 3},${ry}`,
-    ].join(' ');
-    return { branch: b, d };
-  });
+  const returns = returning.map((b, i) => ({ branch: b, d: returnPath(b, i, root, left, S) }));
 
   // The alternative: a small "R" node right after the last chord.
   const badges = returnStyle === 'node' ? resolving.map((b) => {
@@ -162,5 +141,47 @@ export function layout(tree, { compact = false, returnStyle = 'line' } = {}) {
   const width = left + (maxCol + 1) * S.col + 80;
   const lanes = Math.max(...nodes.map((n) => n.lane)) + 1;
   const height = TOP + lanes * S.lane + 10;
-  return { size: S, compact, nodes, edges, returns, badges, bars, hints, labels, width, height };
+  return { size: S, compact, nodes, edges, returns, badges, bars, hints, labels, width, height, root, left, returning, lanes };
+}
+
+/** Edge from n's parent into n. Branches share a vertical trunk just right
+ *  of the fork node, so siblings overlap into one clean line instead of
+ *  fanning out. rootDy moves the root down (sticky root). */
+function edgePath(n, W, H, rootDy = 0) {
+  const a = n.parent, x1 = a.x + W, y1 = a.y + H / 2 + (a.parent ? 0 : rootDy), x2 = n.x - 3, y2 = n.y + H / 2;
+  if (y1 === y2) return `M${x1},${y1} L${x2},${y2}`;
+  const tx = x1 + 16, r = Math.min(10, Math.abs(y2 - y1) / 2), s = Math.sign(y2 - y1);
+  return `M${x1},${y1} L${tx - r},${y1} Q${tx},${y1} ${tx},${y1 + s * r} L${tx},${y2 - s * r} Q${tx},${y2} ${tx + r},${y2} L${x2},${y2}`;
+}
+
+/** Return arrow: down into the gutter under its lane, left to a rail beside
+ *  the root, up (or down, when the root is stuck below), into the root. */
+function returnPath(b, i, root, left, S, rootDy = 0) {
+  const W = S.w, H = S.h;
+  const ry = root.y + H / 2 + rootDy;
+  const sx = b.last.x + W / 2, sy = b.last.y + H;
+  const gy = b.last.y + H + S.gutter;
+  const rx = left - 22 - i * RAIL_GAP;
+  const r = Math.min(8, Math.abs(gy - ry) / 2), s = Math.sign(ry - gy) || -1;
+  return [
+    `M${sx},${sy}`, `L${sx},${gy - 8}`, `Q${sx},${gy} ${sx - 8},${gy}`,
+    `L${rx + r},${gy}`, `Q${rx},${gy} ${rx},${gy + s * r}`,
+    `L${rx},${ry - s * r}`, `Q${rx},${ry} ${rx + r},${ry}`, `L${root.x - 3},${ry}`,
+  ].join(' ');
+}
+
+/** How far the root moves down so it stays in view when the graph is
+ *  scrolled: top = the visible top edge in graph units. Stops at the last lane. */
+export function rootOffset(g, top) {
+  const max = (g.lanes - 1) * g.size.lane;
+  return Math.max(0, Math.min(max, top + 12 - g.root.y));
+}
+
+/** The root's edges and return arrows with the root moved down by dy. */
+export function rootPaths(g, dy) {
+  const W = g.size.w, H = g.size.h;
+  return {
+    edges: g.nodes.filter((n) => n.parent === g.root).map((n) => ({ to: n.id, d: edgePath(n, W, H, dy) })),
+    returns: g.returning.map((b, i) => ({ branch: b, d: returnPath(b, i, g.root, g.left, g.size, dy) })),
+  };
 }

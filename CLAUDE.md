@@ -11,7 +11,7 @@ the release `.exe`.
 | --- | --- |
 | `ui/theory.js` | Pure music theory: scale spelling, Roman-numeral token parser, chord building, 7th colouring, `LIBRARY` of progressions per mode, modifier templates, borrowed-chord generation (`BORROWABLE`), cadence naming, `suggest()` entry point |
 | `ui/styles.js` | `GENRE_STYLES`: per-genre progression libraries (keyed by mode id) plus defaults (`color`, `bpm`, `length`, optional `modifier`). Theory style = `LIBRARY` in theory.js; `STYLES`, `styleById`, `styleModes` exported from theory.js |
-| `ui/graph.js` | Pure: `buildTree()` merges progressions into a prefix tree with lanes; `continuation()` picks "could continue" targets; `layout()` returns pixel geometry (`SIZES.full` / `SIZES.compact`) |
+| `ui/graph.js` | Pure: `buildTree()` merges progressions into a prefix tree with lanes; `continuation()` picks "could continue" targets; `layout()` returns pixel geometry (`SIZES.full` / `SIZES.compact`); sticky root: `rootOffset()` + `rootPaths()` (app.js `stickRoot` on canvas scroll) |
 | `ui/midi.js` | Pure: `voiceChord`/`voiceSequence` (shared by synth and export), SMF writer, `asciiChord`, `midiFileName` |
 | `ui/horn.js` | Pure: sax view — `INSTRUMENTS` (transposition), `SAX_RANGE`, `REGISTERS`, `SCALES` (mode/pentatonics/blues), `chordLayer` (chord tones + chord-scale), `guideLine`, `hornView()`, `formatNote` (letters/Dutch/fixed do), `solfa` (movable do), `degreeLabel` |
 | `ui/fingering.js` | Pure: `KEYS` diagram layout, `fingeringsFor(writtenMidi)` (standard + common alternates) |

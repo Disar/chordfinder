@@ -1,5 +1,5 @@
 import { MODES, MODIFIERS, MODE_ABBR, ROOT_LABELS, STYLES, styleById, styleModes, suggest } from './theory.js';
-import { buildTree, layout } from './graph.js';
+import { buildTree, layout, rootOffset, rootPaths } from './graph.js';
 import { playChord, playSequence, playNote, playLine, playAlong, playOver, stop } from './audio.js';
 import { DRILLS, drillById, makeQuestion, isRight, record, accuracy, ready, emptyStats } from './quiz.js';
 import { progressionToMidi, midiFileName, melodyToMidi, GM_SAX } from './midi.js';
@@ -172,7 +172,23 @@ function renderGraph() {
   }).join('');
 
   svg.innerHTML = `<defs>${markers}</defs>${returns}${edges}${hints}${endbars}${badges}${nodes}${labels}`;
+  rootDy = -1;
+  stickRoot();
   focus(null);
+}
+
+/** Keeps the root chord in view while the graph scrolls down; its edges and
+ *  return arrows are redrawn so they stay connected. */
+let rootDy = 0;
+function stickRoot() {
+  const { g } = model, svg = $('graph');
+  const dy = rootOffset(g, $('canvas').scrollTop / state.zoom);
+  if (dy === rootDy) return;
+  rootDy = dy;
+  svg.querySelector('.node.root')?.setAttribute('transform', `translate(0,${dy})`);
+  const p = rootPaths(g, dy);
+  for (const e of p.edges) svg.querySelector(`.edge[data-to="${CSS.escape(e.to)}"]`)?.setAttribute('d', e.d);
+  for (const r of p.returns) svg.querySelector(`.ret[data-b="${r.branch.id}"]`)?.setAttribute('d', r.d);
 }
 
 function hintText(b) {
@@ -239,7 +255,9 @@ function wireGraph() {
     const svg2 = $('graph');
     svg2.setAttribute('width', model.g.width * state.zoom);
     svg2.setAttribute('height', model.g.height * state.zoom);
+    stickRoot();
   }, { passive: false });
+  $('canvas').addEventListener('scroll', stickRoot, { passive: true });
 }
 
 // ------------------------------------------------------------ detail footer
