@@ -7,14 +7,14 @@
 
 Pick a key and a mode, and Chordfinder draws a map of progressions that start on your root chord: the classic progression for that mode runs along the top, and variations branch off wherever they take a different turn. Every branch is labelled with its mood, and you can hear any chord or progression with a click.
 
-![Chordfinder showing Cinematic-style progressions in C Aeolian](docs/screenshot.png)
+![Chordfinder showing Cinematic-style progressions in C Aeolian, with guitar chord diagrams in the play panel](docs/screenshot.png)
 
 ## Features
 
 - **Styles.** Pick a style from the dropdown and the whole map is rebuilt from that genre's own progressions and mood labels: **Theory**, **Pop**, **EDM**, **Kawaii future bass**, **Lo-fi / neo-soul**, **Rock**, **Ska**, **Ska-punk**, **Blues**, **Jazz**, **Cinematic**, **Synthwave**, **J-pop / anime**, **Gospel**, **Metal** and **Flamenco**, plus a **Video game** group: **Adventure** and **Vampire Hunter** (genre idioms) and **Zelda**, **Castlevania** and **Double Dragon** (transcribed from real tracks, each named). Each style also sets a fitting tempo, chord colour and chord length — 12-bar blues in dominant 7ths, Royal Road and *Just the Two of Us* moves in future bass, power-chord Phrygian riffs in metal, the Andalusian cadence in flamenco.
 - **Any key, any mode.** Choose the root on a piano keyboard and a mode: Ionian (major), Dorian, Phrygian, Lydian, Mixolydian, Aeolian (natural minor), Locrian, harmonic minor, melodic minor or Phrygian dominant. Notes are spelled correctly for the key (E♭ Dorian, not D♯ Dorian).
 - **Progressions grounded in theory.** Each mode comes with well-known progressions — authentic and plagal cadences, ii–V–I, the Andalusian cadence, the circle of fifths, Pachelbel's canon, Dorian and Mixolydian vamps, the Phrygian half-step pull and more.
-- **A branching map.** Progressions that share opening chords share nodes, so variations branch off exactly where they diverge. Arrows show the order of the chords.
+- **A branching map.** Progressions that share opening chords share nodes, so variations branch off exactly where they diverge. Arrows show the order of the chords. The root chord stays in view as you scroll down a long map.
 - **Mood labels.** Every branch is labelled with its mood and name, e.g. *"Bittersweet, tender — borrowed iv from Aeolian"*, and every ending is named from the actual chords (*Authentic cadence · V → I*, *Deceptive cadence*, *Picardy third* …).
 - **Endings that make sense.** Progressions that resolve show an arrow (or a small **R** node) back to the root. Ones that end elsewhere on purpose get a final barline — plus a dotted *could continue* line to where they would naturally go next.
 - **Shift to the parallel mode.** When a progression resolves, the play panel offers the parallel minor (or major) modes on the same root, e.g. C Ionian → C Aeolian or C Dorian. Each one opens a list of that mode's progressions with their chords: click ▶ to preview one, right-click ▶ to hear your progression followed by it, or click the row to switch over.
@@ -22,6 +22,7 @@ Pick a key and a mode, and Chordfinder draws a map of progressions that start on
 - **Borrowed chords.** Optionally branch every progression with chords borrowed from parallel modes (modal interchange): iv and ♭VI in major, Dorian's IV and harmonic minor's V in minor, the Neapolitan ♭II, and more. Borrowed chords are drawn with dashed borders and named after their source mode.
 - **Triads or 7th chords.** Seventh chords take their 7th from the scale the chord actually comes from, so ♭VII in major becomes ♭VII7.
 - **Listen.** Click a chord to hear it, right-click to play its whole progression, or press Space. The play panel shows each chord's notes as it sounds, with adjustable tempo.
+- **Guitar chord diagrams.** Switch the play panel from **Names** to **Guitar** to see a chord box under every chord: the familiar open shape where there is one, else an easy barre or movable shape.
 - **Drag MIDI into your DAW.** Drag the **⠿ MIDI** button into Ableton, FL Studio, Reaper, Bitwig or any DAW that accepts MIDI files. You get the progression exactly as it plays: same voicings, your tempo, chord names as markers.
 - **Phrases or loops.** Play and export a progression as a phrase (2 beats per chord, ending back on the root) or as a loop (1 bar per chord, padded to exactly 4 or 8 bars) that repeats seamlessly in your DAW.
 - **Easy on your drive.** The dragged MIDI file is a short-lived temporary file that Windows keeps in memory and that is deleted a minute after the drop.
@@ -33,6 +34,8 @@ Pick a key and a mode, and Chordfinder draws a map of progressions that start on
 
 Switch the top bar from **Chords** to **Sax** for a practice view aimed at saxophone students.
 
+![The sax view on alto in a jazz ii–V–I: the Am7 chord tones, staff with fingerings, guide-tone line and range grid](docs/sax-view.png)
+
 - **Your instrument, your pitch.** Soprano, alto, tenor or baritone, shown in written or concert pitch. The root picker stays in concert pitch; chord symbols and keys transpose properly (concert B major's V on alto is E♭, not D♯).
 - **Range grid.** Every note in the sax range (written B♭3–F♯6), one row per octave, with the octave-key and palm-key registers marked. Note names as letters, Dutch (Cis, Bes) or fixed do, with optional movable do.
 - **Scales.** The mode, its pentatonics and the blues scale, played back on demand.
@@ -43,6 +46,19 @@ Switch the top bar from **Chords** to **Sax** for a practice view aimed at saxop
 - **Tuner and feedback.** Turn on the microphone to see the note you play, play phrases back by ear, or get feedback while playing along. Nothing is recorded or stored.
 - **Practice mode.** Ear and reading drills — scale degrees after a cadence, chord tones over a chord, reading notes from the staff (answer by name or by playing it) — with levels and scores.
 - **Practice sheet and melody MIDI.** Print the staves with the guide-tone line, or drag the scale or guide-tone line out as MIDI.
+
+### Guitar view
+
+Switch the top bar to **Guitar** for an overview of the neck, aimed at beginners. Guitar or bass, standard tuning.
+
+![The guitar view in G major with the D chord picked: its shape on the neck, chord diagram, strumming pattern, and staff with tab](docs/guitar-view.png)
+
+- **The neck.** Scale notes on every string up to fret 17, labelled as note names, scale degrees or movable do. Hover a note to see the same pitch elsewhere on the neck; a left-handed option mirrors it.
+- **Chords on the neck.** Click a chord in the progression row to see its chord tones and the scale to play over it, with the chord's shape ringed. Step through other shapes up the neck, or pick **Close together** so the hand barely moves between chords.
+- **Positions.** The five pentatonic boxes, or three-notes-per-string patterns for the modes. Pick one and the rest of the neck fades; chord shapes stay inside it.
+- **Staff and tab.** The scale position or the chosen chord, and the whole progression, in written notation with tab underneath.
+- **Strumming.** A pattern per style (folk, driving eighths, offbeat skank, shuffle, gallop, fingerpicking …) or one you make yourself, shown as ↓ ↑ arrows that follow the play-along. Drag the strummed part out as MIDI.
+- **Practice.** Find-the-note and name-the-note drills with levels and scores, and a string tuner.
 
 ## Download
 
@@ -75,10 +91,13 @@ The builds aren't code-signed, so your system may warn on first launch:
 | Drag **⠿ MIDI** | Drop the selected progression into your DAW |
 | Ctrl + mouse wheel | Zoom the map |
 | **Settings** section | Return-to-root style (arrow or R node), chord length (2 beats or 1-bar loop), detailed or compact view |
-| **Chords \| Sax** switch | Switch between the progression map and the sax view |
+| **Names \| Guitar** in the play panel | Show a guitar chord diagram under each chord |
+| **Chords \| Sax \| Guitar** switch | Switch between the progression map, the sax view and the guitar view |
 | Sax view: **Explore \| Practice** | Explore scales and chords, or run the practice drills (keys 1–9/0 answer, R replays, Space next) |
 | Sax view: **Options ▾** | Note names, movable do, what to show (staff, grid or both), fingering strip |
 | Sax view: **🖨 Practice sheet** | Print the staves with the guide-tone line |
+| Guitar view: **Explore \| Practice** | Explore the neck, or run the note drills and the string tuner (keys 1–9/0 answer, Space next) |
+| Guitar view: **Position**, **Shapes**, **Strum** | Limit the neck to one position, choose how chord shapes are picked, pick or edit a strumming pattern |
 
 In the map, a solid arrow leads to the next chord, an **R** node or dashed arrow means *resolves to the root*, a `‖` bar means *ends here*, a dotted line means *could continue*, and a dashed border marks a borrowed chord.
 
@@ -106,11 +125,11 @@ The app is written to `target/release/chordfinder.exe`. For a debug build that o
 npm test
 ```
 
-The tests check note spelling, chord building, every key × mode × option combination, the layout, the borrowed-chord rules, the MIDI files byte by byte, and the sax view's transposition, staff layout, fingerings, pitch detection and drills.
+The tests check note spelling, chord building, every key × mode × option combination, the layout, the borrowed-chord rules, the MIDI files byte by byte, the sax view's transposition, staff layout, fingerings, pitch detection and drills, and the guitar view's chord shapes, positions, tab, strumming patterns and drills.
 
 **Releases**
 
-[`.github/workflows/build.yml`](.github/workflows/build.yml) builds Windows, macOS and Linux versions on GitHub Actions. Push a tag that matches `version` in `tauri.conf.json` (for example `v0.3.0`) to get a draft release with all files attached, or use **Run workflow** on the Actions tab for a test build.
+[`.github/workflows/build.yml`](.github/workflows/build.yml) builds Windows, macOS and Linux versions on GitHub Actions. Push a tag that matches `version` in `tauri.conf.json` (for example `v0.4.0`) to get a draft release with all files attached, or use **Run workflow** on the Actions tab for a test build.
 
 ## How it works
 
@@ -122,6 +141,7 @@ The tests check note spelling, chord building, every key × mode × option combi
 | `ui/midi.js` | Chord voicing (shared with the synth) and the MIDI file writer |
 | `ui/audio.js` | A tiny Web Audio synth for previews and play-along |
 | `ui/horn.js`, `ui/staff.js`, `ui/fingering.js` | The sax view: transposition, scales and chord-scales, staff layout, fingering charts |
+| `ui/guitar.js`, `ui/strum.js`, `ui/fretquiz.js` | The guitar view: chord shapes, the neck, positions, tab, strumming patterns and note drills |
 | `ui/pitch.js`, `ui/mic.js`, `ui/mic-worklet.js` | The tuner: pitch detection and microphone capture |
 | `ui/quiz.js` | The practice drills and scoring |
 | `ui/app.js`, `ui/index.html`, `ui/style.css` | The interface |
