@@ -4,8 +4,31 @@
     {
       "name": "ui-static",
       "runtimeExecutable": "py",
-      "runtimeArgs": ["-m", "http.server", "5174", "--bind", "127.0.0.1", "--directory", "ui"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5174",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "ui"
+      ],
       "port": 5174
+    },
+    {
+      "name": "ui-static-2",
+      "runtimeExecutable": "py",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5178",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "ui"
+      ],
+      "port": 5178,
+      "autoPort": false
     }
   ]
 }

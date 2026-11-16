@@ -12,8 +12,24 @@ import { STRUMS, strumById, styleStrum, customStrum, cleanSteps, cycleStep, resi
 import { FRET_DRILLS, FRET_LEVELS, PRACTICE_FRETS, fretDrillById, makeFretQuestion, isFretRight, pcName, nearestString } from './fretquiz.js';
 import { voicing, shapeText, baseFret, voicingMidi, alternates, voiceLead, scalePositions, shapeInPosition, shapePosition, positionTab, shapeTab, bassArpeggio, FRETTED, FRETS, INLAYS, fretboardView, scaleRun as fretRun } from './guitar.js';
 
-const PALETTE = ['#ffb454', '#7c8cff', '#4cd99a', '#ff7a90', '#4cc3f5', '#c792ea', '#f5d76e',
-  '#5fe0c8', '#ff9d5c', '#9ccc65', '#f78fb3', '#82aaff', '#e6a26a', '#b4a7ff', '#6fd3a0', '#ffcb6b'];
+// Branch (lane) colours per theme; hex because graph strokes append an alpha.
+const PALETTES = {
+  dark: ['#ffb454', '#7c8cff', '#4cd99a', '#ff7a90', '#4cc3f5', '#c792ea', '#f5d76e',
+    '#5fe0c8', '#ff9d5c', '#9ccc65', '#f78fb3', '#82aaff', '#e6a26a', '#b4a7ff', '#6fd3a0', '#ffcb6b'],
+  light: ['#d47406', '#4a5bd8', '#13915a', '#d6405e', '#1a8ac2', '#9a4fd0', '#a88400',
+    '#0f978a', '#d65d1c', '#5a981c', '#c94f86', '#3d6fd6', '#b0652a', '#7360d6', '#2a986a', '#bb8410'],
+  pastel: ['#df7896', '#7d8be0', '#45ab86', '#e48a6a', '#4fa6d4', '#ab79d6', '#c49e36',
+    '#3dada0', '#de9658', '#77ae52', '#d478b2', '#6e98de', '#c28458', '#9989e2', '#58b088', '#cfa044'],
+  sepia: ['#b0602a', '#3f5ea8', '#4f7f2e', '#b8434f', '#2f78a8', '#84448f', '#9a7a12',
+    '#2a8478', '#c0702a', '#6a8a1e', '#a84a78', '#4a6cb0', '#8e5a30', '#6a52a8', '#3a8a5a', '#a87e1a'],
+  mint: ['#12957a', '#4a63d0', '#d24a63', '#d07a10', '#1f86b8', '#8a4ab8', '#a88a00',
+    '#2b8a3e', '#d0602a', '#5d9420', '#c24f8c', '#3d74d0', '#a8682a', '#6e5fd0', '#1a8e9a', '#b8860e'],
+};
+// The other dark themes share the dark set; the accent leads.
+PALETTES.midnight = ['#5ccfe6', ...PALETTES.dark.filter((c) => c !== '#4cc3f5')];
+PALETTES.forest = ['#e8c26a', ...PALETTES.dark.filter((c) => c !== '#f5d76e')];
+PALETTES.twilight = ['#f4a6c0', ...PALETTES.dark.filter((c) => c !== '#f78fb3')];
+const laneColor = (lane) => { const p = PALETTES[state.theme] ?? PALETTES.dark; return p[lane % p.length]; };
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -32,7 +48,7 @@ const loadSaved = () => {
 const state = Object.assign(
   { rootPc: 0, modeId: 'ionian', modifier: 'triad', color: 'triad', selected: 0, bpm: 96, zoom: 1,
     returnStyle: 'line', compact: true, borrowed: false, chordsOpen: true, settingsOpen: false,
-    styleId: 'theory', length: 'phrase', guitar: false,
+    styleId: 'theory', length: 'phrase', guitar: false, theme: 'dark', corners: 'round',
     // Sax view
     view: 'chords', instrument: 'alto', pitch: 'written', hornScale: 'mode', names: 'letters', solfa: false, minorDo: 'do',
     bars: 1, guideLine: false, show: 'both', underNames: true, strip: true,
@@ -44,6 +60,9 @@ const state = Object.assign(
   { v: STATE_VERSION },
 );
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* storage unavailable */ } };
+// Set before the first render so a light theme doesn't flash dark.
+document.documentElement.dataset.theme = state.theme;
+document.documentElement.dataset.corners = state.corners;
 
 let model = null; // { s: suggestion, tree, g: geometry }
 let playing = false;
@@ -86,6 +105,8 @@ function renderStatic() {
   $('borrowed').onclick = (e) => { const b = e.target.closest('[data-borrow]'); if (b) update({ borrowed: b.dataset.borrow === '1' }); };
   $('length').onclick = (e) => { const b = e.target.closest('[data-len]'); if (b) update({ length: b.dataset.len }); };
   $('density').onclick =(e) => { const b = e.target.closest('[data-compact]'); if (b) update({ compact: b.dataset.compact === '1' }); };
+  $('theme').onchange = (e) => update({ theme: e.target.value });
+  $('corners').onclick = (e) => { const b = e.target.closest('[data-corners]'); if (b) update({ corners: b.dataset.corners }); };
   $('view').onclick = (e) => { const b = e.target.closest('[data-view]'); if (b) update({ view: b.dataset.view }); };
   wireHorn();
   wireGuitar();
@@ -112,6 +133,22 @@ function markActive() {
   document.querySelectorAll('#borrowed [data-borrow]').forEach((b) => b.classList.toggle('on', (b.dataset.borrow === '1') === state.borrowed));
   document.querySelectorAll('#density [data-compact]').forEach((b) => b.classList.toggle('on', (b.dataset.compact === '1') === state.compact));
   document.querySelectorAll('#view [data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === state.view));
+  $('theme').value = state.theme in PALETTES ? state.theme : 'dark';
+  document.querySelectorAll('#corners [data-corners]').forEach((b) => b.classList.toggle('on', b.dataset.corners === state.corners));
+  applyTheme();
+}
+
+/** Puts the theme and corner style on <html> and paints the native title bar to match. */
+let appliedTheme = '';
+function applyTheme() {
+  const root = document.documentElement;
+  root.dataset.theme = state.theme;
+  root.dataset.corners = state.corners;
+  if (appliedTheme === state.theme) return;
+  appliedTheme = state.theme;
+  const css = getComputedStyle(root), v = (k) => css.getPropertyValue(k).trim();
+  window.__TAURI__?.core.invoke('set_titlebar', { caption: v('--surface'), text: v('--text'), border: v('--border') })
+    .catch((e) => console.error(e));
 }
 
 function renderScale(s) {
@@ -124,7 +161,7 @@ function renderScale(s) {
 
 function renderGraph() {
   const { tree, g } = model;
-  const color = (b) => PALETTE[b.lane % PALETTE.length];
+  const color = (b) => laneColor(b.lane);
   const z = state.zoom;
   const svg = $('graph');
   svg.setAttribute('viewBox', `0 0 ${g.width} ${g.height}`);
@@ -275,7 +312,7 @@ function selectedBranch() {
 
 function renderDetail() {
   const b = selectedBranch();
-  const color = PALETTE[b.lane % PALETTE.length];
+  const color = laneColor(b.lane);
   const t = model.s.tonic;
   const seq = [t, ...b.chords];
   const chip = (c, i, root) => {
@@ -387,7 +424,7 @@ function shiftMenu(shifts) {
       `<span class="c${lent(c) ? ' borrowed' : ''}" data-i="${i}" title="${esc(chordTitle(c))}">${esc(c.name)}</span>`).join('<span class="arrow">→</span>');
     const end = b.end === 'resolve' ? '<span class="arrow" title="Resolves to the root">↺</span>' : '<span class="end" title="Ends here">‖</span>';
     return `<div class="srow" role="option" tabindex="-1" data-b="${b.id}" title="${esc(b.name)}">
-      <span class="dot" style="background:${PALETTE[b.lane % PALETTE.length]}"></span>
+      <span class="dot" style="background:${laneColor(b.lane)}"></span>
       <span class="smood">${esc(b.mood)}</span>
       <button class="sprev" title="Preview · right-click: play the selected progression first, then this one">▶</button>
       <span class="sseq">${seq}${end}</span></div>`;

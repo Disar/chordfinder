@@ -119,6 +119,19 @@ fn start_drag(_window: &WebviewWindow, _path: PathBuf) -> Result<(), String> {
     Err("dragging files out is only wired up on Windows".into())
 }
 
+/// Repaints the native title bar when the UI theme changes (hex colours from
+/// the theme's --surface, --text and --border).
+#[tauri::command]
+fn set_titlebar(window: WebviewWindow, caption: String, text: String, border: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        titlebar::set(hwnd.0, &caption, &text, &border);
+    }
+    let _ = (window, caption, text, border); // used only on Windows
+    Ok(())
+}
+
 fn main() {
     let result = tauri::Builder::default()
         .setup(|app| {
@@ -132,7 +145,7 @@ fn main() {
             let _ = app; // used only on Windows
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![drag_midi, print_page])
+        .invoke_handler(tauri::generate_handler![drag_midi, print_page, set_titlebar])
         .run(tauri::generate_context!());
 
     if let Err(e) = result {
@@ -150,7 +163,8 @@ mod titlebar {
         DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_CAPTION_COLOR, DWMWA_TEXT_COLOR,
     };
 
-    // Same values as --surface, --text and --border in ui/style.css.
+    // Dark theme's --surface, --text and --border in ui/style.css (the UI
+    // calls set_titlebar with the current theme's colours on load).
     const CAPTION: u32 = rgb(0x15, 0x18, 0x21);
     const TEXT: u32 = rgb(0xe8, 0xeb, 0xf2);
     const BORDER: u32 = rgb(0x2a, 0x30, 0x40);
@@ -161,7 +175,27 @@ mod titlebar {
     }
 
     pub fn match_theme(hwnd: *mut c_void) {
-        for (attr, color) in [(DWMWA_CAPTION_COLOR, CAPTION), (DWMWA_TEXT_COLOR, TEXT), (DWMWA_BORDER_COLOR, BORDER)] {
+        apply(hwnd, CAPTION, TEXT, BORDER);
+    }
+
+    /// "#rrggbb" to a COLORREF.
+    fn parse(hex: &str) -> Option<u32> {
+        let h = hex.trim().strip_prefix('#')?;
+        if h.len() != 6 {
+            return None;
+        }
+        let n = u32::from_str_radix(h, 16).ok()?;
+        Some(rgb((n >> 16) as u8, (n >> 8) as u8, n as u8))
+    }
+
+    pub fn set(hwnd: *mut c_void, caption: &str, text: &str, border: &str) {
+        if let (Some(c), Some(t), Some(b)) = (parse(caption), parse(text), parse(border)) {
+            apply(hwnd, c, t, b);
+        }
+    }
+
+    fn apply(hwnd: *mut c_void, caption: u32, text: u32, border: u32) {
+        for (attr, color) in [(DWMWA_CAPTION_COLOR, caption), (DWMWA_TEXT_COLOR, text), (DWMWA_BORDER_COLOR, border)] {
             // SAFETY: hwnd is this app's live top-level window and the value
             // points at a 4-byte COLORREF, as DwmSetWindowAttribute expects.
             unsafe {

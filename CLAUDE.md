@@ -105,8 +105,15 @@ npm run icon             # regenerate icons
 - **Persisted UI state** lives in `localStorage` key `chordfinder:state`.
   When changing a default, bump `STATE_VERSION` in app.js and drop the old
   saved value in `loadSaved()` (done for compact-as-default in v2).
-- Title-bar colours in `src/main.rs` mirror `--surface`, `--text`,
-  `--border` in style.css — keep them in sync.
+- **Themes** (`state.theme`, dropdown in Settings: dark / midnight / forest /
+  twilight, light / pastel / sepia / mint; `state.corners`: round /
+  boxy) set `data-theme` / `data-corners` on `<html>`. Every colour in
+  style.css is a token in `:root`, overridden per theme — don't add colour
+  literals outside `:root` (piano keys and `#printsheet` excepted). Lane
+  colours are `PALETTES[theme]` in app.js. Radii are `var(--pill)` or
+  `calc(Npx * var(--rk))`; boxy shrinks both. `applyTheme()` calls the Rust
+  `set_titlebar` with the theme's `--surface`/`--text`/`--border`; the
+  constants in `src/main.rs` are the dark defaults used before the UI loads.
 - Copy style: the user prefers concise UI text; chord names use ♭/♯ in the UI
   and ASCII (`Eb`, `F#dim`, `Bm7b5`) in MIDI files.
 
