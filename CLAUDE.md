@@ -15,7 +15,7 @@ the release `.exe`.
 | `ui/midi.js` | Pure: `voiceChord`/`voiceSequence` (shared by synth and export), SMF writer, `asciiChord`, `midiFileName` |
 | `ui/horn.js` | Pure: sax view — `INSTRUMENTS` (transposition), `SAX_RANGE`, `REGISTERS`, `SCALES` (mode/pentatonics/blues), `chordLayer` (chord tones + chord-scale), `guideLine`, `hornView()`, `formatNote` (letters/Dutch/fixed do), `solfa` (movable do), `degreeLabel` |
 | `ui/fingering.js` | Pure: `KEYS` diagram layout, `fingeringsFor(writtenMidi)` (standard + common alternates) |
-| `ui/pitch.js`, `ui/mic.js`, `ui/mic-worklet.js` | Tuner: pure YIN pitch detection + note tracker; mic capture via AudioWorklet (nothing recorded) |
+| `ui/pitch.js`, `ui/mic.js`, `ui/mic-worklet.js` | Tuner: pure YIN pitch detection + note tracker; mic capture via AudioWorklet (nothing recorded); `startMic({ size })` sets the analysis block (2048; 4096 for bass, since the lowest pitch found is about rate / (size / 2)) |
 | `ui/quiz.js` | Pure: practice drills (`DRILLS`, `makeQuestion`, cadence, resolution, scoring) |
 | `ui/staff.js` | Pure: staff notation — `CLEFS`, `keySignature` (mode → parent signature), `accidentals` (carried per bar), `layoutStaff()` pixel geometry; app.js `staffSvg` draws it |
 | `ui/audio.js` | Web Audio synth (uses `voiceChord` from midi.js); `playNote`/`playLine` for single notes, `playAlong` backing loop with count-in |

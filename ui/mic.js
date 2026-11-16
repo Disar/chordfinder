@@ -8,8 +8,9 @@ let stream = null, ctx = null;
 
 /** Opens the mic and calls onFrame(stableNote | null, rawFreq | null) about
  *  30 times a second. stableNote: { midi (concert), cents, since }.
- *  Rejects if the mic is unavailable or permission is refused. */
-export async function startMic({ minHz, maxHz, onFrame }) {
+ *  Rejects if the mic is unavailable or permission is refused. `size`:
+ *  samples per analysis block (the lowest pitch found is about rate / (size / 2)). */
+export async function startMic({ minHz, maxHz, onFrame, size = 2048 }) {
   stopMic();
   // No noise suppression or auto gain: they colour the tone and the pitch.
   // Echo cancellation stays on to damp the app's own backing track.
@@ -22,7 +23,7 @@ export async function startMic({ minHz, maxHz, onFrame }) {
   let tap;
   try {
     await ctx.audioWorklet.addModule(new URL('./mic-worklet.js', import.meta.url));
-    tap = new AudioWorkletNode(ctx, 'tuner-tap');
+    tap = new AudioWorkletNode(ctx, 'tuner-tap', { processorOptions: { size } });
   } catch (e) {
     stopMic(); // release the mic again
     throw e;

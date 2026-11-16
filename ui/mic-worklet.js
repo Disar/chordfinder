@@ -1,15 +1,17 @@
-// Audio-thread side of the tuner: keeps the last 2048 mic samples and posts
-// a copy every `hop` samples. Runs on the audio clock, so the tuner keeps
+// Audio-thread side of the tuner: keeps the last `size` mic samples (2048
+// by default; 4096 for bass, whose low E needs a longer window) and posts a
+// copy every `hop` samples. Runs on the audio clock, so the tuner keeps
 // working when the window is in the background (requestAnimationFrame and
 // timers are throttled there). Nothing is kept beyond this one buffer.
 
 class TunerTap extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
-    this.buf = new Float32Array(2048);
+    const size = options?.processorOptions?.size ?? 2048;
+    this.buf = new Float32Array(size);
     this.fill = 0;
     this.since = 0;
-    this.hop = 1536;
+    this.hop = (size * 3) / 4;
   }
 
   process(inputs) {
