@@ -43,11 +43,12 @@ const loadSaved = () => {
   try { saved = JSON.parse(localStorage.getItem(STORE)) ?? {}; } catch { return {}; }
   if ((saved.v ?? 1) < 2) delete saved.compact; // v2: compact view became the default
   delete saved.midiMode; // setting from the removed virtual-file experiment
+  delete saved.returnStyle; // picker hidden: always the R node (drop this line if the picker comes back)
   return saved;
 };
 const state = Object.assign(
   { rootPc: 0, modeId: 'ionian', modifier: 'triad', color: 'triad', selected: 0, bpm: 96, zoom: 1,
-    returnStyle: 'line', compact: true, borrowed: false, chordsOpen: true, settingsOpen: false,
+    returnStyle: 'node', compact: true, borrowed: false, chordsOpen: true, settingsOpen: false,
     styleId: 'theory', length: 'phrase', guitar: false, theme: 'dark', corners: 'round',
     // Sax view
     view: 'chords', instrument: 'alto', pitch: 'written', hornScale: 'mode', names: 'letters', solfa: false, minorDo: 'do',
