@@ -8,6 +8,7 @@ import { keySignature, layoutStaff, STAFF } from './staff.js';
 import { KEYS, DIAGRAM, fingeringsFor } from './fingering.js';
 import { startMic, stopMic, micOn } from './mic.js';
 import { freqOf } from './pitch.js';
+import { voicing, shapeText, baseFret } from './guitar.js';
 
 const PALETTE = ['#ffb454', '#7c8cff', '#4cd99a', '#ff7a90', '#4cc3f5', '#c792ea', '#f5d76e',
   '#5fe0c8', '#ff9d5c', '#9ccc65', '#f78fb3', '#82aaff', '#e6a26a', '#b4a7ff', '#6fd3a0', '#ffcb6b'];
@@ -29,7 +30,7 @@ const loadSaved = () => {
 const state = Object.assign(
   { rootPc: 0, modeId: 'ionian', modifier: 'triad', color: 'triad', selected: 0, bpm: 96, zoom: 1,
     returnStyle: 'line', compact: true, borrowed: false, chordsOpen: true, settingsOpen: false,
-    styleId: 'theory', length: 'phrase',
+    styleId: 'theory', length: 'phrase', guitar: false,
     // Sax view
     view: 'chords', instrument: 'alto', pitch: 'written', hornScale: 'mode', names: 'letters', solfa: false, minorDo: 'do',
     bars: 1, guideLine: false, show: 'both', underNames: true, strip: true,
@@ -271,8 +272,11 @@ function renderDetail() {
   const color = PALETTE[b.lane % PALETTE.length];
   const t = model.s.tonic;
   const seq = [t, ...b.chords];
-  const chip = (c, i, root) =>
-    `<button class="chord${root ? ' root' : ''}${lent(c) ? ' borrowed' : ''}" data-i="${i}" title="${esc(chordTitle(c))}"><b>${esc(c.name)}</b><small>${esc(c.roman)}</small></button>`;
+  const chip = (c, i, root) => {
+    const v = state.guitar && voicing(c);
+    const tip = chordTitle(c) + (v ? ` · guitar ${shapeText(v)}` : '');
+    return `<button class="chord${root ? ' root' : ''}${lent(c) ? ' borrowed' : ''}${v ? ' gtr' : ''}" data-i="${i}" title="${esc(tip)}"><b>${esc(c.name)}</b>${v ? chordBox(v) : ''}<small>${esc(c.roman)}</small></button>`;
+  };
   const chips = seq.map((c, i) => chip(c, i, i === 0)).join('<span class="arrow">→</span>');
   const shifts = parallelShifts();
   const ending = b.end === 'resolve'
@@ -291,6 +295,7 @@ function renderDetail() {
       <span class="name">${esc(b.name)}</span>
       <span class="now" id="now" aria-live="polite"></span>
       <span class="cad">${esc(b.cadence)}</span>
+      ${seg('guitar', [[false, 'Names'], [true, 'Guitar', 'Show a guitar chord diagram under each chord']])}
     </div>
     <div class="row">
       <button class="play" id="play">${playing ? '■ Stop' : '▶ Play'}</button>
@@ -312,11 +317,32 @@ function renderDetail() {
     focus(null);
   };
   wireShift(shifts);
+  $('detail').querySelector('.head').onclick = segClick;
   $('bpm').oninput = (e) => { state.bpm = +e.target.value; $('bpmv').textContent = state.bpm; save(); };
   $('detail').querySelector('.row').onclick = (e) => {
     const c = e.target.closest('.chord');
     if (c) sound(+c.dataset.i >= seq.length ? t : seq[+c.dataset.i]);
   };
+}
+
+/** Small guitar chord diagram: strings low E (left) to high E, four frets,
+ *  nut or a start-fret number, x / o above muted and open strings. */
+function chordBox(v, k = 1) {
+  const base = baseFret(v), dx = 7, dy = 9, x0 = 10, y0 = 9;
+  const sx = (s) => x0 + s * dx, fy = (f) => y0 + (f - base + 0.5) * dy;
+  const strings = v.frets.map((_, s) => `<line x1="${sx(s)}" y1="${y0}" x2="${sx(s)}" y2="${y0 + 4 * dy}"/>`).join('');
+  const frets = [0, 1, 2, 3, 4].map((i) => `<line x1="${sx(0)}" y1="${y0 + i * dy}" x2="${sx(5)}" y2="${y0 + i * dy}"/>`).join('');
+  const marks = v.frets.map((f, s) => f < 0
+    ? `<text class="mx" x="${sx(s)}" y="${y0 - 2.5}">×</text>`
+    : f === 0 ? `<circle class="mo" cx="${sx(s)}" cy="${y0 - 4.5}" r="2"/>` : '').join('');
+  const b = v.barre;
+  const barre = b ? `<rect class="fd" x="${sx(b.from) - 2.8}" y="${fy(b.fret) - 2.8}" width="${sx(b.to) - sx(b.from) + 5.6}" height="5.6" rx="2.8"/>` : '';
+  const dots = v.frets.map((f, s) => (f > 0 && !(b && f === b.fret && s >= b.from && s <= b.to)
+    ? `<circle class="fd" cx="${sx(s)}" cy="${fy(f)}" r="2.8"/>` : '')).join('');
+  const nut = base === 1 ? `<line class="nut" x1="${sx(0) - 0.5}" y1="${y0}" x2="${sx(5) + 0.5}" y2="${y0}"/>`
+    : `<text class="fr" x="${x0 - 4}" y="${fy(base) + 2.5}">${base}</text>`;
+  const h = y0 + 4 * dy + 2;
+  return `<svg class="gbox" viewBox="0 0 50 ${h}" width="${50 * k}" height="${h * k}" aria-hidden="true">${frets}${strings}${nut}${barre}${dots}${marks}</svg>`;
 }
 
 // Parallel modes to shift into after a resolved branch, most common first.

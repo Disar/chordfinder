@@ -14,6 +14,7 @@ the release `.exe`.
 | `ui/graph.js` | Pure: `buildTree()` merges progressions into a prefix tree with lanes; `continuation()` picks "could continue" targets; `layout()` returns pixel geometry (`SIZES.full` / `SIZES.compact`); sticky root: `rootOffset()` + `rootPaths()` (app.js `stickRoot` on canvas scroll) |
 | `ui/midi.js` | Pure: `voiceChord`/`voiceSequence` (shared by synth and export), SMF writer, `asciiChord`, `midiFileName` |
 | `ui/horn.js` | Pure: sax view — `INSTRUMENTS` (transposition), `SAX_RANGE`, `REGISTERS`, `SCALES` (mode/pentatonics/blues), `chordLayer` (chord tones + chord-scale), `guideLine`, `hornView()`, `formatNote` (letters/Dutch/fixed do), `solfa` (movable do), `degreeLabel` |
+| `ui/guitar.js` | Pure: guitar chord voicings — `OPEN_SHAPES` (standard open chords) first, else a search for movable shapes (`voicing(chord)`, `shapeText`, `baseFret`) |
 | `ui/fingering.js` | Pure: `KEYS` diagram layout, `fingeringsFor(writtenMidi)` (standard + common alternates) |
 | `ui/pitch.js`, `ui/mic.js`, `ui/mic-worklet.js` | Tuner: pure YIN pitch detection + note tracker; mic capture via AudioWorklet (nothing recorded); `startMic({ size })` sets the analysis block (2048; 4096 for bass, since the lowest pitch found is about rate / (size / 2)) |
 | `ui/quiz.js` | Pure: practice drills (`DRILLS`, `makeQuestion`, cadence, resolution, scoring) |
@@ -22,7 +23,7 @@ the release `.exe`.
 | `ui/app.js` | DOM: side panel, SVG rendering, focus/hover, play panel, playback, MIDI drag, persisted state |
 | `ui/index.html`, `ui/style.css` | Markup and styles; colour tokens in `:root` |
 | `src/main.rs` | Window setup, Windows 11 title-bar colours (DWM), `drag_midi` command |
-| `tests/*.test.js` | `node --test` suites for theory, graph, MIDI, styles, horn (sax view), staff, fingering, pitch and quiz |
+| `tests/*.test.js` | `node --test` suites for theory, graph, MIDI, styles, horn (sax view), staff, fingering, guitar, pitch and quiz |
 | `scripts/make-icon.js` | Renders `icons/icon.ico`, `icon.icns` (macOS, artwork inset to 824/1024), `icon.png`, Linux PNG sizes and `drag.png` with no deps |
 | `.github/workflows/build.yml` | CI: tests, then Windows (NSIS + portable zip), macOS universal `.dmg`, Linux AppImage/`.deb`; tag `vX.Y.Z` → draft release |
 
@@ -106,6 +107,15 @@ npm run icon             # regenerate icons
   `--border` in style.css — keep them in sync.
 - Copy style: the user prefers concise UI text; chord names use ♭/♯ in the UI
   and ASCII (`Eb`, `F#dim`, `Bm7b5`) in MIDI files.
+
+- **Guitar diagrams** (play panel, `state.guitar`, Names | Guitar toggle in
+  its header): one small chord box per chord (`chordBox` in app.js), chord
+  name shrinks above it. Voicings: root in the bass on the E/A/D string,
+  only chord tones (5th may drop from 4+ note chords), ≤ 4 fingers, barre
+  only when > 4 strings are fretted, one muted string only right above the
+  bass. The search allows no open strings — it found odd shapes (B as
+  x21402) — so open chords come from `OPEN_SHAPES`. Playback/MIDI still use
+  the piano voicings. A guitar page is a possible later step.
 
 ## Sax view (educational, built in phases)
 

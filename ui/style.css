@@ -214,6 +214,18 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .detail .chord.playing { background: #3a3220; border-color: var(--accent); }
 .detail .chord b { font-size: 14px; }
 .detail .chord small { color: var(--faint); font-size: 10px; }
+.detail .chord.gtr { padding: 3px 6px 2px; justify-items: center; }
+.detail .chord.gtr b { font-size: 12px; line-height: 1.2; }
+.detail .chord.gtr small { font-size: 9px; line-height: 1.2; }
+.gbox { display: block; margin: 1px 0; overflow: visible; }
+.gbox line { stroke: var(--faint); stroke-width: 0.8; }
+.gbox .nut { stroke: var(--dim); stroke-width: 2.2; }
+.gbox .fd { fill: var(--text); }
+.gbox .mo { fill: none; stroke: var(--dim); stroke-width: 0.9; }
+.gbox text { fill: var(--dim); font-size: 7px; text-anchor: middle; }
+.gbox .fr { text-anchor: end; font-size: 7.5px; }
+.detail .chord.playing .gbox .fd { fill: var(--accent); }
+.detail .head .seg button { padding: 2px 9px; font-size: 11px; }
 .detail .arrow { color: var(--faint); }
 .detail .end { color: var(--faint); font-size: 18px; letter-spacing: -2px; padding: 0 4px; }
 .detail .cont {
