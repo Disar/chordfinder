@@ -93,16 +93,30 @@ export function layoutStaff({ clef: clefId = 'treble', sig = 0, bars, labels = 0
   bars.forEach((b, bi) => {
     const x0 = x;
     x += STAFF.barPad;
-    b.notes.forEach((n, ni) => {
-      const acc = accs[bi][ni];
-      if (acc) x += STAFF.accW;
-      const p = pos(n), cx = x + 7;
-      const ledgers = [];
-      for (let l = -2; l >= p; l -= 2) ledgers.push(yOf(l));
-      for (let l = 10; l <= p; l += 2) ledgers.push(yOf(l));
-      notes.push({ ...n, bar: bi, x: cx, y: yOf(p), p, acc, accX: cx - 16, ledgers });
-      x += noteW;
-    });
+    // Columns: a note with `stack: true` sounds with the one before it (a
+    // chord, given low to high). A second within a chord puts the upper head
+    // to the right; accidentals in one column step further left.
+    const cols = [];
+    b.notes.forEach((n, ni) => (n.stack && cols.length ? cols.at(-1).push(ni) : cols.push([ni])));
+    for (const col of cols) {
+      const colAccs = col.map((ni) => accs[bi][ni]);
+      if (colAccs.some(Boolean)) x += STAFF.accW * Math.min(2, colAccs.filter(Boolean).length);
+      const cx = x + 7;
+      let prevP = null, prevShift = false, accN = 0, shifted = false;
+      col.forEach((ni) => {
+        const n = b.notes[ni], acc = accs[bi][ni], p = pos(n);
+        const shift = prevP !== null && p - prevP === 1 && !prevShift;
+        shifted ||= shift;
+        const ledgers = [];
+        for (let l = -2; l >= p; l -= 2) ledgers.push(yOf(l));
+        for (let l = 10; l <= p; l += 2) ledgers.push(yOf(l));
+        const nx = cx + (shift ? 13 : 0);
+        notes.push({ ...n, bar: bi, x: nx, col: cx, y: yOf(p), p, acc, accX: cx - 16 - (acc ? accN++ % 2 : 0) * STAFF.accW, ledgers });
+        prevP = p;
+        prevShift = shift;
+      });
+      x += noteW + (shifted ? 13 : 0);
+    }
     x = Math.max(x, x0 + STAFF.minBar);
     if (bi === bars.length - 1) x = Math.max(x, minWidth - 4); // last bar fills `minWidth`
     barBoxes.push({ x: x0, w: x - x0, label: b.label ?? null });

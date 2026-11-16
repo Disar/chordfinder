@@ -600,19 +600,19 @@ body[data-view="sax"] .horn { display: grid; }
 .hlegend .bar.r-high { background: var(--r-high); }
 
 /* MIDI drag-out in the sax view (same look as the play panel's) */
-.horn .midi {
+.horn .midi, .gview .midi {
   position: relative; display: inline-flex; align-items: center; gap: 6px;
   border: 1px solid #5a4520; background: #2b2416; color: var(--accent); font-weight: 700; font-size: 12px;
   border-radius: 8px; padding: 5px 11px; cursor: grab; letter-spacing: .4px;
 }
-.horn .midi:hover { background: #3a3220; border-color: var(--accent); }
-.horn .midi.dragging { cursor: grabbing; opacity: .6; }
-.horn .midi[data-msg]::after {
+.horn .midi:hover, .gview .midi:hover { background: #3a3220; border-color: var(--accent); }
+.horn .midi.dragging, .gview .midi.dragging { cursor: grabbing; opacity: .6; }
+.horn .midi[data-msg]::after, .gview .midi[data-msg]::after {
   content: attr(data-msg); position: absolute; left: 0; bottom: calc(100% + 8px); white-space: nowrap;
   background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
   font-weight: 500; font-size: 12px; padding: 4px 9px; border-radius: 6px; pointer-events: none;
 }
-.horn .midi.error[data-msg]::after { border-color: #ff6b7a; color: #ff9aa5; }
+.horn .midi.error[data-msg]::after, .gview .midi.error[data-msg]::after { border-color: #ff6b7a; color: #ff9aa5; }
 .hlinerow .midi { margin-left: 10px; }
 
 /* ---------- practice sheet (printed; layout here, visibility in @media print) */
@@ -649,3 +649,117 @@ body[data-view="sax"] .horn { display: grid; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #2a3040; border-radius: 6px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-corner { background: transparent; }
+
+/* ---------- guitar view */
+.gbar { display: none; align-items: center; gap: 10px; flex: none; }
+body[data-view="guitar"] .gbar { display: flex; }
+.gbar .select { width: auto; min-width: 120px; }
+body[data-view="guitar"] .title p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gview { display: none; }
+body[data-view="guitar"] .canvas,
+body[data-view="guitar"] .detail,
+body[data-view="guitar"] .legend { display: none; }
+body[data-view="guitar"] .gview { display: grid; }
+.gview {
+  flex: 1; overflow: auto; align-content: start; gap: 14px; padding: 14px 18px 16px;
+  --blue: #7c8cff;
+}
+.neckbox { overflow-x: auto; }
+.neck { display: block; width: 100%; min-width: 760px; max-width: 1280px; height: auto; }
+.neck .board { fill: var(--surface-2); }
+.neck .inlay { fill: #2c3346; }
+.neck .fret { stroke: #3a4256; stroke-width: 2; }
+.neck .nut { stroke: var(--dim); stroke-width: 5; }
+.neck .str { stroke: #7d869a; }
+.neck text { font-size: 11px; text-anchor: middle; dominant-baseline: central; }
+.neck .sname { fill: var(--dim); font-weight: 600; }
+.neck .fnum { fill: var(--faint); }
+.neck .fnum.mark { fill: var(--dim); font-weight: 600; }
+.fnote { cursor: pointer; }
+.fnote circle { fill: var(--node); stroke: #4a5370; stroke-width: 1.2; }
+.fnote text { fill: var(--text); pointer-events: none; }
+.fnote.blue circle { fill: #252a4a; stroke: var(--blue); }
+.fnote.tonic circle { fill: var(--accent); stroke: var(--accent); }
+.fnote.tonic text { fill: #2b1d05; font-weight: 700; }
+.fnote:hover circle, .fnote.same circle { stroke: var(--text); stroke-width: 2.2; }
+.fnote.playing circle { fill: #3a3220; stroke: var(--accent); stroke-width: 2.5; }
+.fnote.tonic.playing circle { fill: #ffd08a; }
+.gkey { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; color: var(--dim); font-size: 12px; }
+.gkey span { display: inline-flex; align-items: center; gap: 6px; }
+.gkey .hint { color: var(--faint); }
+.gkey .k-tonic { fill: var(--accent); }
+.gkey .k-note { fill: var(--node); stroke: #4a5370; }
+.gkey .k-blue { fill: #252a4a; stroke: var(--blue); }
+.gview .mic {
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-weight: 600;
+  border-radius: 999px; padding: 6px 14px;
+}
+.gview .mic:hover { border-color: #4a5370; }
+.gmain { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.gmain .neckbox { flex: 1; min-width: 0; }
+.gcard {
+  flex: none; width: 150px; height: 196px; display: grid; justify-items: center; align-content: start; gap: 4px;
+  padding: 10px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+}
+.gcard .gname { font-size: 16px; }
+.gcard .gstrum { border: 0; background: none; padding: 0; cursor: pointer; border-radius: 6px; }
+.gcard .gstrum:hover .fd { fill: var(--accent); }
+.gcard .galt { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 12px; }
+.gcard .galt button {
+  border: 1px solid var(--border); background: var(--surface-2); border-radius: 6px; padding: 1px 9px; color: var(--dim);
+}
+.gcard .galt button:hover:not(:disabled) { color: var(--text); border-color: #4a5370; }
+.gcard .galt button:disabled { opacity: .35; cursor: default; }
+.gcard code { color: var(--faint); font-size: 11px; }
+.gcard .ghint { color: var(--faint); font-size: 12px; text-align: center; margin: 54px 0 0; }
+.fnote.tone circle { fill: #2f3850; stroke: #8a95b0; }
+.fnote.pass circle { fill: var(--surface); stroke: #3a4256; }
+.fnote.pass text { fill: var(--faint); font-size: 9px; }
+.fnote .ring { fill: none; stroke: var(--accent); stroke-width: 2.2; }
+.fnote.tonic .ring { stroke: #ffd08a; }
+.gkey .k-tone { fill: #2f3850; stroke: #8a95b0; }
+.gkey .k-pass { fill: var(--surface); stroke: #3a4256; }
+.gkey .k-ring { fill: none; stroke: var(--accent); stroke-width: 2; }
+.fnote.out { opacity: .16; }
+.fnote.out:hover, .fnote.out.same { opacity: .6; }
+.gkey .k-out { fill: var(--node); stroke: #4a5370; opacity: .3; }
+.gview .gnote { color: var(--dim); font-size: 12px; font-style: normal; }
+.gstaves { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.gstaff .s8 { fill: var(--text); font-size: 10px; text-anchor: middle; }
+.gstaff .stab { fill: var(--faint); font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.gstaff .tabn { cursor: pointer; }
+.gstaff .tabbg { fill: var(--surface); }
+.gstaff .tabn text { fill: var(--text); font-size: 11px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
+.gstaff .tabn.same text, .gstaff .tabn.playing text { fill: var(--accent); }
+.gstaff .snote.same .shead { stroke-width: 3.2; }
+.gstaff .snote.playing .shead { stroke: var(--accent); fill: var(--accent); }
+.gstrumrow { gap: 8px 14px; }
+.gpat { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; letter-spacing: .9px; text-transform: uppercase; color: var(--faint); }
+.gpat .select { width: auto; min-width: 150px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.strumbar { display: inline-flex; gap: 2px; padding: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.strumbar .sb { display: grid; justify-items: center; width: 24px; padding: 1px 0; border-radius: 5px; }
+.strumbar.s16 .sb { width: 17px; }
+.strumbar .sb b { font-size: 15px; line-height: 1.1; color: var(--text); }
+.strumbar .sb.rest b { color: var(--faint); }
+.strumbar .sb small { font-size: 9px; color: var(--faint); }
+.strumbar .sb.beat small { color: var(--dim); font-weight: 700; }
+.strumbar .sb.hit { background: #3a3220; }
+.strumbar .sb.hit b { color: var(--accent); }
+.gpattip { color: var(--faint); font-size: 12px; }
+.gview .midi { margin-left: auto; }
+.gview { --guide: #4cd99a; }
+.neck .ftarget { fill: transparent; cursor: pointer; }
+.neck .ftarget:hover { fill: rgba(255, 180, 84, .25); }
+.neck .beyond { fill: var(--bg); opacity: .6; }
+.neck .str.ask { stroke: var(--accent); }
+.fnote.qmark.ask circle { fill: var(--accent); stroke: var(--accent); }
+.fnote.qmark.ask text { fill: #2b1d05; font-weight: 700; }
+.fnote.qmark.right circle { fill: #1c3a2c; stroke: var(--guide); stroke-width: 2; }
+.fnote.qmark.right text { fill: var(--guide); font-weight: 700; }
+.fnote.qmark.wrong circle { fill: #2a1518; stroke: #ff6b7a; stroke-width: 2; }
+.fnote.qmark.wrong text { fill: #ff9aa5; font-weight: 700; }
+.gview .quiz { max-width: none; }
+.qprompt .qsub { color: var(--faint); font-size: 13px; font-weight: 500; margin-left: 6px; }
+.gtuner { width: 210px; }
+.gtuner .tnote small { font-size: 14px; color: var(--dim); font-weight: 500; }
+.gview .mic.on { border-color: #ff6b7a; color: #ff9aa5; background: #2a1518; }

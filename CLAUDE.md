@@ -14,16 +14,18 @@ the release `.exe`.
 | `ui/graph.js` | Pure: `buildTree()` merges progressions into a prefix tree with lanes; `continuation()` picks "could continue" targets; `layout()` returns pixel geometry (`SIZES.full` / `SIZES.compact`); sticky root: `rootOffset()` + `rootPaths()` (app.js `stickRoot` on canvas scroll) |
 | `ui/midi.js` | Pure: `voiceChord`/`voiceSequence` (shared by synth and export), SMF writer, `asciiChord`, `midiFileName` |
 | `ui/horn.js` | Pure: sax view — `INSTRUMENTS` (transposition), `SAX_RANGE`, `REGISTERS`, `SCALES` (mode/pentatonics/blues), `chordLayer` (chord tones + chord-scale), `guideLine`, `hornView()`, `formatNote` (letters/Dutch/fixed do), `solfa` (movable do), `degreeLabel` |
-| `ui/guitar.js` | Pure: guitar chord voicings — `OPEN_SHAPES` (standard open chords) first, else a search for movable shapes (`voicing(chord)`, `shapeText`, `baseFret`) |
+| `ui/guitar.js` | Pure: chord voicings (`OPEN_SHAPES` first, else a movable-shape search: `voicing`, `shapeText`, `baseFret`) and the guitar view: neck (`FRETTED` instruments, `fretboardView` with optional chord focus, `scaleRun`), `alternates` (≤ 6 shapes up the neck), `voiceLead`, `movement`, `scalePositions`, `shapeInPosition`; staff/tab notes (`WRITTEN` = +12, `positionTab`, `shapeTab`, `bassArpeggio`, `placeNote`) |
+| `ui/strum.js` | Pure: strumming patterns (`STRUMS`, one bar of 8/16 steps: D U x - 1–6), `STYLE_STRUM` (Auto per style), `strumBar` / `strumProgression` (timed events), `strumNotes` (for MIDI) |
 | `ui/fingering.js` | Pure: `KEYS` diagram layout, `fingeringsFor(writtenMidi)` (standard + common alternates) |
 | `ui/pitch.js`, `ui/mic.js`, `ui/mic-worklet.js` | Tuner: pure YIN pitch detection + note tracker; mic capture via AudioWorklet (nothing recorded); `startMic({ size })` sets the analysis block (2048; 4096 for bass, since the lowest pitch found is about rate / (size / 2)) |
 | `ui/quiz.js` | Pure: practice drills (`DRILLS`, `makeQuestion`, cadence, resolution, scoring) |
-| `ui/staff.js` | Pure: staff notation — `CLEFS`, `keySignature` (mode → parent signature), `accidentals` (carried per bar), `layoutStaff()` pixel geometry; app.js `staffSvg` draws it |
+| `ui/fretquiz.js` | Pure: guitar-view drills (`FRET_DRILLS` find/name, `FRET_LEVELS`, `makeFretQuestion`, `isFretRight`) and `nearestString` for the string tuner |
+| `ui/staff.js` | Pure: staff notation — `CLEFS`, `keySignature` (mode → parent signature), `accidentals` (carried per bar), `layoutStaff()` pixel geometry (notes with `stack: true` join the previous note's chord column; `col` = column x); app.js `staffSvg` / `tabStaffSvg` draw it |
 | `ui/audio.js` | Web Audio synth (uses `voiceChord` from midi.js); `playNote`/`playLine` for single notes, `playAlong` backing loop with count-in |
 | `ui/app.js` | DOM: side panel, SVG rendering, focus/hover, play panel, playback, MIDI drag, persisted state |
 | `ui/index.html`, `ui/style.css` | Markup and styles; colour tokens in `:root` |
 | `src/main.rs` | Window setup, Windows 11 title-bar colours (DWM), `drag_midi` command |
-| `tests/*.test.js` | `node --test` suites for theory, graph, MIDI, styles, horn (sax view), staff, fingering, guitar, pitch and quiz |
+| `tests/*.test.js` | `node --test` suites for theory, graph, MIDI, styles, horn (sax view), staff, fingering, guitar, strum, fretquiz, pitch and quiz |
 | `scripts/make-icon.js` | Renders `icons/icon.ico`, `icon.icns` (macOS, artwork inset to 824/1024), `icon.png`, Linux PNG sizes and `drag.png` with no deps |
 | `.github/workflows/build.yml` | CI: tests, then Windows (NSIS + portable zip), macOS universal `.dmg`, Linux AppImage/`.deb`; tag `vX.Y.Z` → draft release |
 
@@ -107,6 +109,81 @@ npm run icon             # regenerate icons
   `--border` in style.css — keep them in sync.
 - Copy style: the user prefers concise UI text; chord names use ♭/♯ in the UI
   and ASCII (`Eb`, `F#dim`, `Bm7b5`) in MIDI files.
+
+## Guitar view (overview for beginners, built in phases)
+
+Goal: a concise, general overview of the neck, not a full method. Same
+pattern as the sax view: **Chords | Sax | Guitar** switch, shared side
+panel, every mode selectable, controls in the header (`#gbar`: instrument
++ Options ▾), scale chips shared with the sax view (`state.hornScale`).
+
+- Instruments in `FRETTED`: Guitar (6-string) and Bass (4-string), standard
+  tuning only for now (alternate tunings: later option; the open-shape
+  table assumes standard). MIDI numbers are sounding pitch.
+- Neck (`neckSvg` in app.js): frets 0–17 (the highest position reaches 17), equal fret widths so labels fit,
+  high string on top (tab orientation), inlays 3 5 7 9 12 15. Labels
+  (`state.fretLabels`): names / degrees / movable do. Left-handed flip
+  (`state.lefty`) mirrors x only. Hover marks every spot of the same pitch;
+  click plays it. Play scale: two octaves from the lowest tonic (one on bass
+  when two don't fit), Space toggles.
+- Progression row (phase 2): progression select + scale chips + chord
+  chips (`data-gi`). `gFocus` (null = scale, else chord index; module
+  state) shows the chord-scale from `chordLayer`: chord tones filled,
+  other scale notes small, the current shape ringed. Degree labels count
+  from the chord root; movable do stays on the key. Chord card (guitar
+  only, fixed size): big `chordBox(v, 2.3)`, ◀ ▶ through `alternates`
+  (overrides in `gAlt`, keyed `index:name`), click strums. Shapes:
+  Easiest | Close together (`state.gVoice`; `voiceLead` = DP over the
+  alternates, first chord fixed at its easiest, falls back to easiest if
+  that moves less). Play along strums the shapes (`playAlong({ strums })`,
+  `playStrum` in audio.js); bass plays piano chords + root line. Space
+  toggles play-along.
+- Positions (phase 3, `state.gPos`, 0 = whole neck): `scalePositions`
+  walks the scale from each scale note on the low string — two notes per
+  string for pentatonics (the standard five boxes; tested against A minor
+  pent), three per string for seven-note scales (3NPS, 7 positions; chosen
+  over CAGED because it is regular for every mode). Blues = minor pent
+  boxes + ♭5 a fret above each 4th. Position 1 starts on the tonic. Notes
+  outside the position's per-string fret range are dimmed (also for a
+  focused chord's chord-scale); Play scale walks the position's exact
+  spots. Chord shapes come from `shapeInPosition` (easiest inside the
+  frets ±1, else nearest) and join the ◀ ▶ list.
+- Staff + tab (phase 4, `guitarStaves` / `tabStaffSvg` in app.js): written
+  pitch (sounding + 12), treble clef (bass clef on bass) with a small 8
+  below, tab lines under the staff (high string on top), fret numbers on a
+  background patch. Focus box: the scale in the chosen position (position
+  1 on the whole neck), or a focused chord's shape stacked then note by
+  note (bass: chord-tone arpeggio). Progression box: one bar per chord
+  (guitar shapes; bass roots), current chord highlighted. Hovering a
+  staff/tab note marks its spot on the neck; Play scale lights the neck
+  and the scale staff only.
+- Strumming (phase 5, guitar only, `state.strum`: 'auto' = the style's
+  pattern from `STYLE_STRUM`, else a pattern id): row under the play row
+  with the picker, an arrow strip over the count (`strumStrip`, the hit
+  step lights during play-along via `onHit`), the pattern's tip and a
+  `⠿ MIDI` drag (`strumMidi`: one pass, GM steel guitar 25, chord
+  markers, `notesToMidi` in midi.js). Play-along passes `rhythm` events
+  to `playAlong` (downs low→high, ups on the top 4 strings high→low,
+  chucks short and quiet, swing = off-beats at 2/3, `short` patterns
+  clipped). onHit timers are scheduled after onStep so a chord change
+  re-render doesn't wipe the first hit's highlight. Bass is unchanged.
+- Phase 1 (done): neck, scales, labels, instruments, left-handed, play
+  scale. Phase 2 (done): progression on the neck. Phase 3 (done):
+  positions. Phase 4 (done): staff + tab. Phase 5 (done): strumming.
+  Phase 6 (done, native mic untested): practice + string tuner. Later
+  options: alternate tunings; Play/MIDI using the guitar voicings when the
+  play panel's Guitar toggle is on.
+- Practice (phase 6, `state.gPractice`, Explore | Practice in `#gbar`):
+  `renderFretQuiz` replaces the view. Drills: find (click the spot on the
+  asked string; `.ftarget` hit circles, frets 0–12, 13–17 shaded) and name
+  (a marked spot, answer with buttons or 1–9/0). Levels per drill in
+  `state.gLevels`: two low strings / all strings (naturals) / with ♯/♭.
+  Scores in `chordfinder:quiz` under `g<drill>:<instrument>:<level>`
+  (quiz.js `record`/`ready`). Space = next. "🎤 Tune strings" opens the mic
+  with its own handler (`gHeard`, `gTunerHtml` swapped in place each
+  frame); `update()` stops the mic when view, fretted instrument or
+  practice mode changes (`micReset`). Tested with an oscillator stream:
+  111 Hz → A string +16¢; bass 41.5 Hz → E string +12¢.
 
 - **Guitar diagrams** (play panel, `state.guitar`, Names | Guitar toggle in
   its header): one small chord box per chord (`chordBox` in app.js), chord

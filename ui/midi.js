@@ -103,6 +103,37 @@ export function melodyToMidi(notes, { bpm = 96, name = 'Chordfinder', program = 
   return new Uint8Array([...chunk('MThd', [0, 1, 0, 2, (PPQ >> 8) & 0xff, PPQ & 0xff]), ...chunk('MTrk', lead), ...chunk('MTrk', back)]);
 }
 
+/** General MIDI programs (0-based): steel-string acoustic guitar, finger bass. */
+export const GM_GUITAR = 25, GM_BASS = 33;
+
+/** Overlapping notes as a format-0 MIDI file. notes: [{ midi, at, dur
+ *  (beats), vel? }], markers: [{ at, text }] (e.g. chord names). */
+export function notesToMidi(notes, { bpm = 96, name = 'Chordfinder', program = GM_GUITAR, markers = [] } = {}) {
+  const tick = (b) => Math.round(PPQ * b);
+  // Absolute-time events; at equal times: markers, then note-offs, then note-ons.
+  const evs = [
+    ...markers.map((m) => ({ t: tick(m.at), o: 0, bytes: [0xff, 0x06, ...vlq(ascii(asciiChord(m.text)).length), ...ascii(asciiChord(m.text))] })),
+    ...notes.flatMap((n) => [
+      { t: tick(n.at), o: 2, bytes: [0x90, n.midi, n.vel ?? 90] },
+      { t: Math.max(tick(n.at) + 1, tick(n.at + n.dur)), o: 1, bytes: [0x80, n.midi, 64] },
+    ]),
+  ].sort((a, b) => a.t - b.t || a.o - b.o);
+  const ev = [];
+  const meta = (type, data) => ev.push(0, 0xff, type, ...vlq(data.length), ...data);
+  meta(0x03, ascii(asciiChord(name)));
+  const tempo = Math.round(60_000_000 / bpm);
+  meta(0x51, [(tempo >> 16) & 0xff, (tempo >> 8) & 0xff, tempo & 0xff]);
+  meta(0x58, [4, 2, 24, 8]);
+  ev.push(0, 0xc0, program & 0x7f);
+  let now = 0;
+  for (const e of evs) {
+    ev.push(...vlq(e.t - now), ...e.bytes);
+    now = e.t;
+  }
+  ev.push(0, 0xff, 0x2f, 0);
+  return new Uint8Array([...chunk('MThd', [0, 0, 0, 1, (PPQ >> 8) & 0xff, PPQ & 0xff]), ...chunk('MTrk', ev)]);
+}
+
 /** A file name that is safe on every OS, e.g. "Eb Dorian - Modal rock.mid". */
 export function midiFileName(keyName, modeName, branchName) {
   const raw = asciiChord(`${keyName} ${modeName} - ${branchName}`);

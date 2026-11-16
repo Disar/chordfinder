@@ -1,14 +1,16 @@
-import { MODES, MODIFIERS, MODE_ABBR, ROOT_LABELS, STYLES, styleById, styleModes, suggest } from './theory.js';
+import { MODES, MODIFIERS, MODE_ABBR, ROOT_LABELS, STYLES, mod, styleById, styleModes, suggest } from './theory.js';
 import { buildTree, layout, rootOffset, rootPaths } from './graph.js';
-import { playChord, playSequence, playNote, playLine, playAlong, playOver, stop } from './audio.js';
+import { playChord, playSequence, playNote, playLine, playAlong, playOver, playStrum, stop } from './audio.js';
 import { DRILLS, drillById, makeQuestion, isRight, record, accuracy, ready, emptyStats } from './quiz.js';
-import { progressionToMidi, midiFileName, melodyToMidi, GM_SAX } from './midi.js';
+import { progressionToMidi, midiFileName, melodyToMidi, notesToMidi, GM_SAX, GM_GUITAR } from './midi.js';
 import { INSTRUMENTS, REGISTERS, SCALES, SAX_RANGE, hornView, formatNote, solfa, degreeLabel, chordLayer, chordSymbol, guideLine, octaveOf } from './horn.js';
 import { keySignature, layoutStaff, STAFF } from './staff.js';
 import { KEYS, DIAGRAM, fingeringsFor } from './fingering.js';
 import { startMic, stopMic, micOn } from './mic.js';
 import { freqOf } from './pitch.js';
-import { voicing, shapeText, baseFret } from './guitar.js';
+import { STRUMS, strumById, styleStrum, counts, strumProgression, strumNotes } from './strum.js';
+import { FRET_DRILLS, FRET_LEVELS, PRACTICE_FRETS, fretDrillById, makeFretQuestion, isFretRight, pcName, nearestString } from './fretquiz.js';
+import { voicing, shapeText, baseFret, voicingMidi, alternates, voiceLead, scalePositions, shapeInPosition, shapePosition, positionTab, shapeTab, bassArpeggio, FRETTED, FRETS, INLAYS, fretboardView, scaleRun as fretRun } from './guitar.js';
 
 const PALETTE = ['#ffb454', '#7c8cff', '#4cd99a', '#ff7a90', '#4cc3f5', '#c792ea', '#f5d76e',
   '#5fe0c8', '#ff9d5c', '#9ccc65', '#f78fb3', '#82aaff', '#e6a26a', '#b4a7ff', '#6fd3a0', '#ffcb6b'];
@@ -34,7 +36,10 @@ const state = Object.assign(
     // Sax view
     view: 'chords', instrument: 'alto', pitch: 'written', hornScale: 'mode', names: 'letters', solfa: false, minorDo: 'do',
     bars: 1, guideLine: false, show: 'both', underNames: true, strip: true,
-    practice: false, drill: 'degree', levels: { degree: 0, tone: 0, read: 0 } },
+    practice: false, drill: 'degree', levels: { degree: 0, tone: 0, read: 0 },
+    // Guitar view
+    fretInst: 'guitar', fretLabels: 'names', lefty: false, gVoice: 'easy', gPos: 0, strum: 'auto',
+    gPractice: false, gDrill: 'find', gLevels: { find: 0, name: 0 } },
   loadSaved(),
   { v: STATE_VERSION },
 );
@@ -83,6 +88,7 @@ function renderStatic() {
   $('density').onclick =(e) => { const b = e.target.closest('[data-compact]'); if (b) update({ compact: b.dataset.compact === '1' }); };
   $('view').onclick = (e) => { const b = e.target.closest('[data-view]'); if (b) update({ view: b.dataset.view }); };
   wireHorn();
+  wireGuitar();
 }
 
 function markActive() {
@@ -93,8 +99,8 @@ function markActive() {
   document.querySelectorAll('#modes [data-mode]').forEach((b) => {
     b.classList.toggle('on', b.dataset.mode === state.modeId);
     // Modes the style has no progressions for are dimmed and can't be picked
-    // (the sax view only needs the scale, so every mode is open there).
-    const na = state.view !== 'sax' && !usable.includes(b.dataset.mode);
+    // (the sax and guitar views only need the scale, so every mode is open there).
+    const na = state.view === 'chords' && !usable.includes(b.dataset.mode);
     b.disabled = na;
     b.classList.toggle('na', na);
     b.title = na ? `Not used in the ${style.name} style` : '';
@@ -1222,6 +1228,605 @@ function stopHorn() {
   if (a) a.textContent = '▶ Play along';
 }
 
+// ------------------------------------------------------------ guitar view
+
+let gOptsOpen = false, gPlaying = false, gAlong = false;
+// What the neck shows: null = the scale, else a chord of the progression
+// (0 = root chord). Follows the backing track while it plays.
+let gFocus = null;
+// Shapes picked with ◀ ▶, by `${index}:${chord name}` (stale keys are harmless).
+let gAlt = {};
+
+const isGuitar = () => state.fretInst === 'guitar';
+
+const fretModel = (chord = null) => fretboardView({
+  instrumentId: state.fretInst, rootPc: state.rootPc, modeId: state.modeId, scaleId: state.hornScale, chord,
+});
+
+/** What a note on the neck is labelled with: its name, degree (from the
+ *  chord root when a chord is shown) or movable do (Do stays the key's). */
+function fretLabel(n, v) {
+  const la = state.minorDo === 'la';
+  if (state.fretLabels === 'degrees') return degreeLabel(n, v.tonic);
+  if (state.fretLabels === 'solfa') return v.layer
+    ? solfa(n, v.keyTonic, { minor: v.mode.tonic !== 'I', la })
+    : solfa(n, v.tonic, { minor: v.minor, la });
+  return formatNote(n.letter, n.acc, state.names);
+}
+
+/** The scale's positions (boxes) for the shown instrument, key and scale. */
+const fretPositions = () => scalePositions({
+  instrumentId: state.fretInst, rootPc: state.rootPc, modeId: state.modeId, scaleId: state.hornScale,
+});
+/** The chosen position, or null for the whole neck. */
+const currentPosition = () => (state.gPos ? fretPositions()[state.gPos - 1] ?? null : null);
+
+/** The selected progression, with a guitar shape per chord: inside the
+ *  chosen position, else the easiest or voice-led ("close together");
+ *  a shape picked with ◀ ▶ wins. */
+function guitarProgression() {
+  const b = selectedBranch();
+  const chords = [model.s.tonic, ...b.chords];
+  const pos = currentPosition();
+  if (!isGuitar()) return { b, chords, pos, alts: null, pick: null, shapes: null };
+  const led = !pos && state.gVoice === 'led' ? voiceLead(chords) : null;
+  const alts = led ? led.alts : chords.map((c) => {
+    const a = alternates(c);
+    if (!pos) return a;
+    // The in-position shape joins the list (in neck order) if it isn't there.
+    const s = shapeInPosition(c, pos);
+    const has = a.list.find((v) => shapeText(v) === shapeText(s));
+    const list = has ? a.list : [...a.list, s].sort((x, y) => shapePosition(x) - shapePosition(y));
+    return { list, best: list.indexOf(has ?? s) };
+  });
+  const pick = chords.map((c, i) => Math.min(alts[i].list.length - 1, gAlt[`${i}:${c.name}`] ?? (led ? led.picks[i] : alts[i].best)));
+  return { b, chords, pos, alts, pick, shapes: pick.map((p, i) => alts[i].list[p]) };
+}
+
+/** Whether a cell lies inside a position's frets on its string. */
+const inPosition = (c, pos) => !pos || (c.fret >= pos.range[c.string][0] && c.fret <= pos.range[c.string][1]);
+
+/** Lowest root on the bass (E1 up), for the bass play-along line. */
+const bassRoot = (c) => 28 + mod(c.pc - 28, 12);
+
+// Neck geometry (SVG units). Frets have equal widths so labels fit everywhere.
+const NECK = { left: 30, open: 38, fret: 54, top: 20, gap: 30, right: 12 };
+const OPEN_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+
+/** The neck with the scale (or a chord's chord-scale and tones); `shape`
+ *  rings the notes of a guitar shape. */
+function neckSvg(v, shape = null, pos = null, practice = null) {
+  const n = v.inst.strings.length, G = NECK;
+  const nut = G.left + G.open, end = nut + FRETS * G.fret;
+  const W = end + G.right, H = G.top + (n - 1) * G.gap + 36;
+  const X = (x) => (state.lefty ? W - x : x);
+  const sy = (s) => G.top + (n - 1 - s) * G.gap; // high string on top
+  const fx = (f) => (f === 0 ? G.left + G.open / 2 : nut + (f - 0.5) * G.fret);
+  const yTop = sy(n - 1), yBot = sy(0), mid = (yTop + yBot) / 2;
+  const board = `<rect class="board" x="${Math.min(X(nut), X(end))}" y="${yTop - 8}" width="${end - nut}" height="${yBot - yTop + 16}" rx="3"/>`;
+  const inlays = INLAYS.map((f) => (f === 12
+    ? [mid - G.gap, mid + G.gap].map((y) => `<circle class="inlay" cx="${X(fx(f))}" cy="${y}" r="5"/>`).join('')
+    : `<circle class="inlay" cx="${X(fx(f))}" cy="${mid}" r="5"/>`)).join('');
+  const frets = Array.from({ length: FRETS }, (_, i) => {
+    const x = X(nut + (i + 1) * G.fret);
+    return `<line class="fret" x1="${x}" y1="${yTop - 8}" x2="${x}" y2="${yBot + 8}"/>`;
+  }).join('');
+  const nutLine = `<line class="nut" x1="${X(nut)}" y1="${yTop - 9}" x2="${X(nut)}" y2="${yBot + 9}"/>`;
+  const strings = v.inst.strings.map((open, s) =>
+    `<line class="str${practice?.string === s ? ' ask' : ''}" x1="${X(G.left + 6)}" y1="${sy(s)}" x2="${X(end)}" y2="${sy(s)}" style="stroke-width:${(1 + (n - 1 - s) * 0.35).toFixed(2)}"/>`
+    + `<text class="sname" x="${X(G.left - 14)}" y="${sy(s)}">${OPEN_NAMES[open % 12]}</text>`).join('');
+  const nums = Array.from({ length: FRETS + 1 }, (_, f) =>
+    `<text class="fnum${INLAYS.includes(f) ? ' mark' : ''}" x="${X(fx(f))}" y="${yBot + 25}">${f}</text>`).join('');
+  const inShape = (c) => shape && shape.frets[c.string] === c.fret;
+  if (practice) {
+    // Practice: no notes shown; clickable spots (frets 0–12) and marks.
+    const beyond = `<rect class="beyond" x="${Math.min(X(nut + PRACTICE_FRETS * G.fret), X(end))}" y="${yTop - 9}" width="${(FRETS - PRACTICE_FRETS) * G.fret}" height="${yBot - yTop + 18}"/>`;
+    const hits = practice.targets ? v.inst.strings.flatMap((open, s) => Array.from({ length: PRACTICE_FRETS + 1 }, (_, f) =>
+      `<circle class="ftarget" data-s="${s}" data-f="${f}" data-m="${open + f}" cx="${X(fx(f))}" cy="${sy(s)}" r="13"/>`)).join('') : '';
+    const marks = practice.marks.map((m) => `<g class="fnote qmark ${m.cls}" data-m="${v.inst.strings[m.string] + m.fret}" data-s="${m.string}" data-f="${m.fret}" transform="translate(${X(fx(m.fret))} ${sy(m.string)})"><circle r="12"/><text>${esc(m.label)}</text></g>`).join('');
+    return `<svg class="neck" id="neck" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(v.inst.name)} neck">${board}${inlays}${frets}${nutLine}${strings}${nums}${beyond}${hits}${marks}</svg>`;
+  }
+  const notes = v.strings.flatMap((s) => s.cells.filter((c) => c.note).map((c) => {
+    const pass = v.layer && !c.tone;
+    const cls = `fnote${c.tonic ? ' tonic' : ''}${c.blue ? ' blue' : ''}${c.tone ? ' tone' : ''}${pass ? ' pass' : ''}${inPosition(c, pos) ? '' : ' out'}`;
+    return `<g class="${cls}" data-m="${c.midi}" data-s="${c.string}" data-f="${c.fret}" transform="translate(${X(fx(c.fret))} ${sy(c.string)})">`
+      + `${inShape(c) ? '<circle class="ring" r="15.5"/>' : ''}<circle r="${pass ? 9.5 : 12}"/><text>${esc(fretLabel(c.note, v))}</text></g>`;
+  })).join('');
+  return `<svg class="neck" id="neck" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(v.inst.name)} neck">${board}${inlays}${frets}${nutLine}${strings}${nums}${notes}</svg>`;
+}
+
+function renderGuitar() {
+  const positions = fretPositions();
+  if (state.gPos > positions.length) state.gPos = 0;
+  const p = guitarProgression();
+  if (gFocus !== null && gFocus >= p.chords.length) gFocus = null;
+  const chord = gFocus === null ? null : p.chords[gFocus];
+  const v = fretModel(chord);
+  const shape = chord && p.shapes ? p.shapes[gFocus] : null;
+  const nm = (n) => formatNote(n.letter, n.acc, state.names);
+  const solo = v.scale && v.scale.id !== 'mode';
+  const keyName = `${nm(v.key)} ${modeLabel(v.mode)}`;
+  if (chord) {
+    const sm = v.layer.scaleMode;
+    $('keyTitle').textContent = `${v.inst.name} — ${chord.name} in ${keyName}`;
+    $('keyFeel').textContent = `Chord tones: ${v.layer.tones.map(nm).join(' ')} · scale over it: ${sm ? `${nm(v.tonic)} ${sm.name}` : v.notes.map(nm).join(' ')}`;
+  } else {
+    $('keyTitle').textContent = solo
+      ? `${v.inst.name} — ${nm(v.tonic)} ${v.scale.name.toLowerCase()}`
+      : `${v.inst.name} — ${keyName}`;
+    $('keyFeel').textContent = `${solo ? `Key: ${nm(v.key)} ${v.mode.name}. ` : ''}Notes: ${v.notes.map(nm).join(' ')} · standard tuning ${v.inst.tuning}`
+      + (p.pos ? ` · position ${p.pos.n}: frets ${p.pos.lo}–${p.pos.hi}` : '');
+  }
+  $('keyFeel').title = $('keyFeel').textContent;
+
+  $('gbar').innerHTML = `
+    ${seg('gPractice', [[false, 'Explore'], [true, 'Practice', 'Find and name notes on the neck, and tune your strings']])}
+    <select id="finst" class="select" aria-label="Instrument">${FRETTED.map((i) =>
+      `<option value="${i.id}"${i.id === v.inst.id ? ' selected' : ''}>${esc(i.name)}</option>`).join('')}</select>
+    <div class="hoptwrap">
+      <button class="hoptbtn${gOptsOpen ? ' open' : ''}" id="goptbtn" aria-expanded="${gOptsOpen}">Options ▾</button>
+      <div class="hopts"${gOptsOpen ? '' : ' hidden'}>
+        <div class="hfield"><span>Labels</span>${seg('fretLabels', [['names', 'Names'], ['degrees', '1 2 ♭3', 'Scale degrees (from the chord root when a chord is shown)'], ['solfa', 'Do Re Mi', 'Movable do: Do is the key’s tonic']])}</div>
+        ${state.fretLabels === 'names' ? `<div class="hfield"><span>Note names</span>${seg('names', [['letters', 'C D E'], ['dutch', 'Cis Bes', 'Dutch: Cis, Bes, Es, As'], ['fixed', 'Do Re Mi', 'Fixed do: Do is always C']])}</div>` : ''}
+        ${state.fretLabels === 'solfa' ? `<div class="hfield"><span>Minor keys</span>${seg('minorDo', [['do', 'Do-based', 'Minor tonic is Do (♭3 = Me)'], ['la', 'La-based', 'Minor tonic is La']])}</div>` : ''}
+        <div class="hfield"><span>Neck</span>${seg('lefty', [[false, 'Right-handed'], [true, 'Left-handed', 'Mirror the neck: nut on the right']])}</div>
+      </div>
+    </div>`;
+  $('finst').onchange = (e) => update({ fretInst: e.target.value });
+  if (state.gPractice) return renderFretQuiz(v);
+
+  const branches = model.tree.branches.map((b) =>
+    `<option value="${b.id}"${b.id === p.b.id ? ' selected' : ''}>${esc(b.mood)} — ${esc(b.name)}</option>`).join('');
+  const scaleChips = SCALES.map((s) => {
+    const cls = s.id !== state.hornScale ? '' : gFocus === null ? ' on' : ' sel';
+    return `<button class="hchord scalechip${cls}" data-scale="${s.id}" title="Show the ${esc(s.id === 'mode' ? `${v.mode.name} scale` : s.name.toLowerCase())}">${esc(s.id === 'mode' ? v.mode.name : s.short ?? s.name)}</button>`;
+  }).join('');
+  const chips = p.chords.map((c, i) =>
+    `<button class="hchord${i === 0 ? ' root' : ''}${lent(c) ? ' borrowed' : ''}${i === gFocus ? ' on' : ''}" data-gi="${i}" title="${esc(chordTitle(c))}"><b>${esc(c.name)}</b><small>${esc(c.roman)}</small></button>`).join('<span class="arrow">→</span>');
+  const ending = p.b.end === 'resolve' ? '<span class="arrow" title="Resolves to the root">↺</span>' : '<span class="end" title="Ends here">‖</span>';
+
+  let card = '';
+  if (isGuitar()) {
+    const n = shape ? p.alts[gFocus].list.length : 0, at = shape ? p.pick[gFocus] : 0;
+    card = `<div class="gcard">${shape ? `
+      <b class="gname">${esc(chord.name)}</b>
+      <button class="gstrum" id="gstrum" title="Strum it">${chordBox(shape, 2.3)}</button>
+      <div class="galt"><button data-alt="-1" title="Shape lower on the neck"${at === 0 ? ' disabled' : ''}>◀</button><span>${at + 1} / ${n}</span><button data-alt="1" title="Shape higher on the neck"${at === n - 1 ? ' disabled' : ''}>▶</button></div>
+      <code>${esc(shapeText(shape))}</code>` : '<p class="ghint">Pick a chord to see its shape and where its notes are on the neck</p>'}</div>`;
+  }
+  const legend = chord
+    ? `<span><svg width="16" height="16"><circle cx="8" cy="8" r="7" class="k-tonic"/></svg>chord root</span>
+       <span><svg width="16" height="16"><circle cx="8" cy="8" r="7" class="k-tone"/></svg>chord tone</span>
+       <span><svg width="16" height="16"><circle cx="8" cy="8" r="5.5" class="k-pass"/></svg>other scale note</span>
+       ${shape ? '<span><svg width="18" height="18"><circle cx="9" cy="9" r="7.5" class="k-ring"/></svg>the shape</span>' : ''}`
+    : `<span><svg width="16" height="16"><circle cx="8" cy="8" r="7" class="k-tonic"/></svg>root</span>
+       <span><svg width="16" height="16"><circle cx="8" cy="8" r="7" class="k-note"/></svg>scale note</span>
+       ${v.notes.some((x) => x.blue) ? '<span><svg width="16" height="16"><circle cx="8" cy="8" r="7" class="k-blue"/></svg>blue note</span>' : ''}`;
+
+  $('gview').innerHTML = `
+    <div class="hprog">
+      <select id="gbranch" class="select" aria-label="Progression" title="Progression">${branches}</select>
+      <div class="hchords">
+        <span class="scalechips">${scaleChips}</span><span class="sep"></span>${chips}${ending}
+      </div>
+    </div>
+    <div class="hplay">
+      <button class="play" id="galong" title="Count-in, then the progression on a loop · Space">${gAlong ? '■ Stop' : '▶ Play along'}</button>
+      <button class="mic" id="gplay" title="Up and down the scale shown">${gPlaying ? '■ Stop' : '▶ Play scale'}</button>
+      <div class="hfield inline"><span>Position</span>${seg('gPos', [[0, 'Whole neck'], ...positions.map((x) =>
+        [x.n, String(x.n), `Frets ${x.lo}–${x.hi}: ${positions.length === 5 ? 'two' : 'three'} notes per string${x.n === 1 ? ', starting on the root' : ''}`])])}</div>
+      ${!isGuitar() ? '' : p.pos ? '<div class="hfield inline"><span>Shapes</span><em class="gnote">in position</em></div>'
+        : `<div class="hfield inline"><span>Shapes</span>${seg('gVoice', [['easy', 'Easiest', 'Each chord’s easiest shape'], ['led', 'Close together', 'Shapes near each other on the neck, so the hand moves little']])}</div>`}
+      <div class="hfield inline"><span>Bars per chord</span>${seg('bars', [[1, '1'], [2, '2']])}</div>
+      <label class="tempo">Tempo <input id="gbpm" type="range" min="50" max="180" value="${state.bpm}"> <span id="gbpmv">${state.bpm}</span></label>
+    </div>
+    ${isGuitar() ? `<div class="hplay gstrumrow">
+      <label class="gpat">Strum <select id="gpattern" class="select" aria-label="Strumming pattern">
+        <option value="auto"${state.strum === 'auto' ? ' selected' : ''}>Auto: ${esc(styleStrum(state.styleId).name)}</option>
+        ${STRUMS.map((x) => `<option value="${x.id}"${state.strum === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+      ${strumStrip(currentStrum())}
+      <span class="gpattip">${esc(currentStrum().tip)}</span>
+      ${midiButton('gmidi', 'Drag into your DAW: this progression strummed with this pattern, one pass (guitar sound)')}
+    </div>` : ''}
+    <div class="gmain">${card}<div class="neckbox">${neckSvg(v, shape, p.pos)}</div></div>
+    <div class="gstaves">${guitarStaves(v, p, chord, shape)}</div>
+    <div class="gkey">${legend}
+      ${p.pos ? `<span><svg width="16" height="16"><circle cx="8" cy="8" r="7" class="k-out"/></svg>outside position ${p.pos.n}</span>` : ''}
+      <span class="hint">Click a note to hear it · hover to see the same note elsewhere on the neck</span>
+    </div>`;
+  $('gbpm').oninput = (e) => { state.bpm = +e.target.value; $('gbpmv').textContent = state.bpm; save(); };
+  if ($('gpattern')) $('gpattern').onchange = (e) => update({ strum: e.target.value });
+  if ($('gmidi')) wireMidiDrag($('gmidi'), () => strumMidi(guitarProgression()));
+  $('gbranch').onchange = (e) => {
+    stopGuitar();
+    state.selected = +e.target.value;
+    gFocus = null;
+    save();
+    renderDetail();
+    renderGuitar();
+  };
+}
+
+/** Staff + tab for the guitar view: the focus (a position of the scale, or
+ *  the chord: its shape and then note by note; on bass an arpeggio) and the
+ *  progression (guitar shapes, or bass roots), one bar per chord. Written
+ *  pitch: treble clef (bass clef on bass) with an 8 below. */
+function guitarStaves(v, p, chord, shape) {
+  const bass = !isGuitar();
+  const clef = bass ? 'bass' : 'treble';
+  const span = bass ? [-2, 12] : [-7, 10];
+  const keySig = keySignature(v.key, v.mode.id);
+  const tabNote = (n, stack = false) => ({ ...n, stack, texts: [], cls: [n.tonic && 'tonic', n.blue && 'blue'].filter(Boolean).join(' ') });
+  let focus;
+  if (chord && shape) {
+    const notes = shapeTab(shape, v.layer);
+    focus = { title: `${chord.name} · the shape, then note by note`, sig: keySig,
+      bars: [{ label: chord.name, notes: notes.map((n, i) => tabNote(n, i > 0)) }, { notes: notes.map((n) => tabNote(n)) }] };
+  } else if (chord) {
+    focus = { title: `${chord.name} · chord tones`, sig: keySig, bars: [{ label: chord.name, notes: bassArpeggio(v.layer).map((n) => tabNote(n)) }] };
+  } else {
+    const pos = p.pos ?? fretPositions()[0];
+    const solo = v.scale.id !== 'mode';
+    focus = { title: `Scale · position ${pos.n}${p.pos ? '' : ' (choose a position to see another)'}`,
+      sig: solo ? keySignature(v.tonic, v.minor ? 'aeolian' : 'ionian') : keySig,
+      bars: [{ notes: positionTab(v, pos).map((n) => tabNote(n)) }] };
+  }
+  const layers = p.chords.map((c) => chordLayer(c, v.key, v.key));
+  const lead = {
+    title: bass ? 'Progression · roots' : 'Progression · shapes',
+    sig: keySig,
+    bars: p.chords.map((c, i) => ({ label: c.name, notes: bass
+      ? [tabNote(bassArpeggio(layers[i])[0])]
+      : shapeTab(p.shapes[i], layers[i]).map((n, j) => tabNote(n, j > 0)) })),
+  };
+  return [focus, lead].map((s, i) => {
+    const g = layoutStaff({ clef, sig: s.sig, bars: s.bars, span });
+    return `<div class="staffbox"><h4>${esc(s.title)}</h4>${tabStaffSvg(g, v.inst.strings.length, i === 1 ? gFocus : null)}</div>`;
+  }).join('');
+}
+
+/** A staff (from layoutStaff) with a tab staff under it; notes and fret
+ *  numbers carry data-m (sounding MIDI), data-s and data-f (string, fret). */
+function tabStaffSvg(g, n, current) {
+  const gap = 10, tabTop = g.height + 10, tabH = (n - 1) * gap, H = tabTop + tabH + 10;
+  const x0 = 4, x1 = g.width - 2;
+  const [topLine, , , , botLine] = g.lines;
+  const sy = (s) => tabTop + (n - 1 - s) * gap;
+  const box = current !== null && g.barBoxes[current];
+  const hl = box ? `<rect class="sbar-on" x="${box.x + 2}" y="${topLine - 22}" width="${box.w - 4}" height="${tabTop + tabH - topLine + 30}" rx="6"/>` : '';
+  const lines = g.lines.map((y) => `<line class="sline" x1="${x0}" y1="${y}" x2="${x1}" y2="${y}"/>`).join('')
+    + Array.from({ length: n }, (_, s) => `<line class="sline" x1="${x0}" y1="${sy(s)}" x2="${x1}" y2="${sy(s)}"/>`).join('');
+  const clef = g.clef.id === 'treble'
+    ? `<text class="sclef" x="6" y="${botLine + g.half * 2.6}" style="font-size:${g.half * 15}px">${g.clef.glyph}</text><text class="s8" x="17" y="${botLine + g.half * 5.4}">8</text>`
+    : `<text class="sclef" x="8" y="${topLine + g.half * 6.2}" style="font-size:${g.half * 8.6}px">${g.clef.glyph}</text><text class="s8" x="16" y="${botLine + g.half * 3.2}">8</text>`;
+  const tab = ['T', 'A', 'B'].map((t, i) => `<text class="stab" x="16" y="${tabTop + tabH / 2 + (i - 1) * Math.min(12, tabH / 3)}">${t}</text>`).join('');
+  const sig = g.sigGlyphs.map((s) => `<text class="sacc" x="${s.x}" y="${s.y}">${s.glyph}</text>`).join('');
+  const bar = (x, y0, y1, last) => (last
+    ? `<line class="sline" x1="${x - 4}" y1="${y0}" x2="${x - 4}" y2="${y1}"/><line class="sline thick" x1="${x}" y1="${y0}" x2="${x}" y2="${y1}"/>`
+    : `<line class="sline" x1="${x}" y1="${y0}" x2="${x}" y2="${y1}"/>`);
+  const bars = g.barlines.map((x, i) => {
+    const last = i === g.barlines.length - 1;
+    return bar(x, topLine, botLine, last) + bar(x, sy(n - 1), sy(0), last);
+  }).join('');
+  const labels = g.barBoxes.map((b) => (b.label ? `<text class="slabel" x="${b.x + 16}" y="${Math.min(14, topLine - 14)}">${esc(b.label)}</text>` : '')).join('');
+  const ids = (x) => `data-m="${x.midi}" data-s="${x.string}" data-f="${x.fret}"`;
+  const notes = g.notes.map((x) => `<g class="snote ${x.cls}" ${ids(x)}>
+      ${x.ledgers.map((y) => `<line class="sledger" x1="${x.x - 11}" y1="${y}" x2="${x.x + 11}" y2="${y}"/>`).join('')}
+      ${x.acc ? `<text class="sacc" x="${x.accX}" y="${x.y}">${x.acc}</text>` : ''}
+      <ellipse class="shead" cx="${x.x}" cy="${x.y}" rx="6.6" ry="4.6" transform="rotate(-20 ${x.x} ${x.y})"/>
+      <rect class="shit" x="${x.x - 12}" y="${x.y - 9}" width="24" height="18"/></g>`).join('');
+  const frets = g.notes.map((x) => {
+    const w = x.fret > 9 ? 16 : 11;
+    return `<g class="tabn" ${ids(x)}><rect class="tabbg" x="${x.col - w / 2}" y="${sy(x.string) - 6}" width="${w}" height="12"/><text x="${x.col}" y="${sy(x.string)}">${x.fret}</text></g>`;
+  }).join('');
+  return `<svg class="staff gstaff" width="${g.width}" height="${H}" viewBox="0 0 ${g.width} ${H}">${hl}${lines}${clef}${tab}${sig}${bars}${labels}${notes}${frets}</svg>`;
+}
+
+/** The strumming pattern in use: the style's own ("Auto") or the one picked. */
+const currentStrum = () => (state.strum === 'auto' ? styleStrum(state.styleId) : strumById(state.strum));
+
+const STRUM_GLYPH = { D: '↓', U: '↑', x: '×', '-': '·' };
+
+/** The pattern as arrows over the count; `data-k` = step, lit while playing. */
+function strumStrip(pat) {
+  const n = pat.steps.length, cnt = counts(pat);
+  return `<span class="strumbar${n === 16 ? ' s16' : ''}" title="${esc(pat.tip)}">${[...pat.steps].map((ch, i) =>
+    `<span class="sb${i % (n / 4) === 0 ? ' beat' : ''}${ch === '-' ? ' rest' : ''}" data-k="${i}"><b>${STRUM_GLYPH[ch] ?? ch}</b><small>${cnt[i]}</small></span>`).join('')}</span>`;
+}
+
+/** The progression strummed with the pattern, one pass, as guitar MIDI. */
+function strumMidi(p) {
+  const pat = currentStrum(), beats = alongBeats(p.chords.length);
+  const events = strumProgression(pat, p.shapes.map(voicingMidi), beats);
+  const starts = beats.map((_, i) => beats.slice(0, i).reduce((a, b) => a + b, 0));
+  const name = midiFileName(`${model.s.key.name} ${MODES.find((m) => m.id === state.modeId).name}`, p.b.name, `${pat.name} guitar`);
+  return {
+    name,
+    bytes: notesToMidi(strumNotes(events), {
+      bpm: state.bpm, program: GM_GUITAR, name: name.replace(/\.mid$/, ''),
+      markers: p.chords.map((c, i) => ({ at: starts[i], text: c.name })),
+    }),
+  };
+}
+
+/** Sounds chord i: its guitar shape strummed, or on bass the piano chord. */
+function soundGuitarChord(i) {
+  const p = guitarProgression();
+  if (p.shapes) playStrum(voicingMidi(p.shapes[i]));
+  else playChord(p.chords[i]);
+}
+
+function wireGuitar() {
+  $('gbar').onclick = (e) => {
+    if (e.target.closest('#goptbtn')) { gOptsOpen = !gOptsOpen; renderGuitar(); return; }
+    segClick(e);
+  };
+  document.addEventListener('mousedown', (e) => {
+    if (gOptsOpen && !e.target.closest('.hoptwrap')) { gOptsOpen = false; renderGuitar(); }
+  });
+  $('gview').onclick = (e) => {
+    if (state.gPractice && fretQuizClick(e)) return;
+    if (segClick(e)) return;
+    if (e.target.closest('#galong')) return gAlong ? stopGuitar() : playGuitarAlong();
+    if (e.target.closest('#gplay')) return gPlaying ? stopGuitar() : playFretScale();
+    const sc = e.target.closest('[data-scale]');
+    if (sc) {
+      if (!gAlong) stopGuitar();
+      gFocus = null;
+      if (sc.dataset.scale !== state.hornScale) update({ hornScale: sc.dataset.scale });
+      else renderGuitar();
+      return;
+    }
+    const ch = e.target.closest('[data-gi]');
+    if (ch) {
+      if (gPlaying) stopGuitar();
+      gFocus = +ch.dataset.gi;
+      renderGuitar();
+      if (!gAlong) soundGuitarChord(gFocus);
+      return;
+    }
+    const alt = e.target.closest('[data-alt]');
+    if (alt && gFocus !== null) {
+      const p = guitarProgression();
+      const n = p.alts[gFocus].list.length;
+      gAlt[`${gFocus}:${p.chords[gFocus].name}`] = Math.max(0, Math.min(n - 1, p.pick[gFocus] + +alt.dataset.alt));
+      renderGuitar();
+      if (!gAlong) soundGuitarChord(gFocus);
+      return;
+    }
+    if (e.target.closest('#gstrum') && gFocus !== null) return soundGuitarChord(gFocus);
+    const n = e.target.closest('.fnote, .snote, .tabn');
+    if (n) playNote(+n.dataset.m);
+  };
+  // Hovering a note rings every place the same pitch sits on the neck.
+  // A staff or tab note marks its spot on the neck.
+  $('gview').onmouseover = (e) => {
+    $('gview').querySelectorAll('.same').forEach((x) => x.classList.remove('same'));
+    const n = e.target.closest('.fnote');
+    if (n) $('gview').querySelectorAll(`.fnote[data-m="${n.dataset.m}"]`).forEach((x) => x.classList.add('same'));
+    const t = e.target.closest('.snote, .tabn');
+    if (t) $('gview').querySelectorAll(`[data-s="${t.dataset.s}"][data-f="${t.dataset.f}"]`).forEach((x) => x.classList.add('same'));
+  };
+}
+
+/** Play scale: in a position, its notes low to high and back, lighting the
+ *  exact spots; on the whole neck, up and down from the lowest tonic,
+ *  lighting every spot of each pitch. */
+function playFretScale() {
+  stopGuitar();
+  const p = guitarProgression();
+  const v = fretModel(gFocus === null ? null : p.chords[gFocus]);
+  let run, sel;
+  if (p.pos) {
+    const seen = new Set();
+    const up = v.strings.flatMap((s) => s.cells).filter((c) => c.note && inPosition(c, p.pos))
+      .sort((a, b) => a.midi - b.midi || a.string - b.string)
+      .filter((c) => !seen.has(c.midi) && seen.add(c.midi));
+    const cells = [...up, ...up.slice(0, -1).reverse()];
+    run = cells.map((c) => c.midi);
+    sel = (i) => `[data-s="${cells[i].string}"][data-f="${cells[i].fret}"]`;
+  } else {
+    run = fretRun(v);
+    sel = (i) => `[data-m="${run[i]}"]`;
+  }
+  gPlaying = true;
+  $('gplay').textContent = '■ Stop';
+  playLine(run, state.bpm, (i) => {
+    $('gview').querySelectorAll('.playing').forEach((x) => x.classList.remove('playing'));
+    $('gview').querySelectorAll(`.neckbox ${sel(i)}, .gstaves .staffbox:first-child ${sel(i)}`).forEach((x) => x.classList.add('playing'));
+  }, stopGuitar);
+}
+
+/** Count-in, then the progression on a loop: strummed guitar shapes, or on
+ *  bass the chords with the root line. The neck follows each chord. */
+function playGuitarAlong() {
+  stopGuitar();
+  const p = guitarProgression(), beats = alongBeats(p.chords.length);
+  gAlong = true;
+  $('galong').textContent = '■ Stop';
+  playAlong({
+    chords: p.chords, beats, bpm: state.bpm,
+    rhythm: p.shapes ? strumProgression(currentStrum(), p.shapes.map(voicingMidi), beats) : null,
+    onHit: (e) => {
+      $('gview').querySelectorAll('.strumbar .hit').forEach((x) => x.classList.remove('hit'));
+      $('gview').querySelector(`.strumbar [data-k="${e.step}"]`)?.classList.add('hit');
+    },
+    line: p.shapes ? null : p.chords.map(bassRoot),
+    onCount: (n) => { $('galong').textContent = `■ ${n + 1}…`; },
+    onStep: (i) => {
+      gFocus = i;
+      renderGuitar();
+      $('gview').querySelector(`[data-gi="${i}"]`)?.classList.add('playing');
+    },
+  });
+}
+
+function stopGuitar() {
+  stop();
+  gPlaying = false;
+  gAlong = false;
+  $('gview').querySelectorAll('.playing').forEach((x) => x.classList.remove('playing'));
+  const b = $('gplay');
+  if (b) b.textContent = '▶ Play scale';
+  const a = $('galong');
+  if (a) a.textContent = '▶ Play along';
+}
+
+// ------------------------------------------------------------ guitar practice
+
+// The current question ({ key, q, answered }), the tuner's heard note and error.
+let gQuiz = null, gHeard = null, gMicErr = null, gResetArmed = 0;
+const gLevel = () => state.gLevels?.[state.gDrill] ?? 0;
+const gStatsKey = () => `g${state.gDrill}:${state.fretInst}:${gLevel()}`;
+
+/** "low E", "A", … "high E" (guitar); plain names on bass. */
+const stringWord = (inst, s) => (inst.id === 'guitar' && (s === 0 || s === inst.strings.length - 1)
+  ? `${s === 0 ? 'low' : 'high'} E` : OPEN_NAMES[inst.strings[s] % 12]);
+
+function renderFretQuiz(v) {
+  const inst = v.inst, d = fretDrillById(state.gDrill), lv = gLevel();
+  const key = `${d.id}:${lv}:${inst.id}`;
+  if (!gQuiz || gQuiz.key !== key) gQuiz = { key, q: makeFretQuestion({ drill: d.id, level: lv, instrumentId: inst.id, prev: gQuiz?.q }), answered: null };
+  const q = gQuiz.q, st = quizStats[gStatsKey()] ?? emptyStats(), acc = accuracy(st);
+  const done = gQuiz.answered !== null, ok = done && isFretRight(q, gQuiz.answered);
+  const str = `${stringWord(inst, q.string)} string`;
+  $('keyTitle').textContent = `${inst.name} — practice`;
+  $('keyFeel').textContent = `${d.name}: ${FRET_LEVELS[lv].tip.toLowerCase()} · frets 0–${PRACTICE_FRETS}`;
+  $('keyFeel').title = $('keyFeel').textContent;
+
+  const prompt = q.drill === 'find'
+    ? `Find <b>${esc(pcName(q.pc))}</b> on the ${esc(str)}`
+    : `Which note is marked? <small class="qsub">${esc(str)}</small>`;
+  const opts = q.drill !== 'name' ? '' : q.options.map((o, i) => {
+    const cls = !done ? '' : o.id === q.answer ? ' right' : o.id === gQuiz.answered ? ' wrong' : ' dim';
+    return `<button class="qopt${cls}" data-qa="${o.id}"><kbd>${i < 9 ? i + 1 : i === 9 ? 0 : ''}</kbd>${esc(o.label)}</button>`;
+  }).join('');
+  const where = q.drill === 'find'
+    ? `${pcName(q.pc)} is at fret ${q.answers.join(' and ')} on the ${str}`
+    : `it’s ${pcName(q.pc)} (${str}, fret ${q.fret})`;
+  const feedback = !done ? '' : `<div class="qfeed ${ok ? 'ok' : 'bad'}">${ok ? '✓ Right' : '✗ Not quite'} — ${esc(where)}
+    <button class="play" id="qnext">Next <kbd>Space</kbd></button></div>`;
+
+  // Marks on the neck: the asked spot, the answers, a wrong click.
+  const marks = [];
+  if (q.drill === 'find') {
+    if (done) {
+      if (!ok) marks.push({ string: gQuiz.answered.string, fret: gQuiz.answered.fret, cls: 'wrong',
+        label: OPEN_NAMES[mod(inst.strings[gQuiz.answered.string] + gQuiz.answered.fret, 12)] });
+      for (const f of q.answers) marks.push({ string: q.string, fret: f, cls: 'right', label: OPEN_NAMES[q.pc] });
+    }
+  } else {
+    marks.push({ string: q.string, fret: q.fret, cls: done ? (ok ? 'right' : 'wrong') : 'ask', label: done ? OPEN_NAMES[q.pc] : '?' });
+  }
+  const practice = { marks, targets: q.drill === 'find' && !done, string: q.string };
+
+  $('gview').innerHTML = `
+    <div class="quiz">
+      <div class="qhead">
+        ${seg('gDrill', FRET_DRILLS.map((x) => [x.id, x.name]))}
+        <div class="seg qlevels">${FRET_LEVELS.map((l, i) => `<button data-qlevel="${i}" class="${i === lv ? 'on' : ''}" title="${esc(l.tip)}">${i + 1} · ${esc(l.name)}</button>`).join('')}</div>
+      </div>
+      <p class="qblurb">${esc(d.blurb)}</p>
+      <div class="qscore">
+        <span>Streak <b>${st.streak}</b></span><span>Best <b>${st.best}</b></span>
+        <span>Last ${st.recent.length || 20}: <b>${acc === null ? '—' : `${acc}%`}</b></span><span>${st.total} answered</span>
+        <button class="link" id="qreset">${gResetArmed > Date.now() ? 'Sure? Click again' : 'Reset'}</button>
+        ${ready(st) && lv < FRET_LEVELS.length - 1 ? `<button class="qready" data-qlevel="${lv + 1}">90%+ — try level ${lv + 2} →</button>` : ''}
+      </div>
+      <div class="qcard"><div class="qplay"><span class="qprompt">${prompt}</span></div>${opts ? `<div class="qopts">${opts}</div>` : ''}${feedback}</div>
+    </div>
+    <div class="hplay">
+      <button class="mic${micOn() ? ' on' : ''}" id="gmic" title="Tuner: play one open string at a time. Nothing is recorded or saved.">${micOn() ? '● Tuner on' : '🎤 Tune strings'}</button>
+    </div>
+    <div class="gmain">${gTunerHtml(inst)}<div class="neckbox">${neckSvg(v, null, null, practice)}</div></div>`;
+}
+
+/** The string tuner: the nearest open string and how far off it is. */
+function gTunerHtml(inst) {
+  if (!micOn() && !gMicErr) return '';
+  let html = '<h4>Tuner</h4>';
+  if (gMicErr) html += `<p class="terr">${esc(gMicErr)}</p>`;
+  else if (gHeard) {
+    const t = nearestString(gHeard.midi, gHeard.cents, inst.strings), c = t.cents;
+    const tone = Math.abs(c) <= IN_TUNE ? 'ok' : Math.abs(c) <= 30 ? 'near' : 'off';
+    const pos = 50 + Math.max(-50, Math.min(50, c));
+    html += `<div class="tnote">${esc(stringWord(inst, t.string))} <small>string</small></div>
+      <div class="tneedle"><span class="tzone"></span><span class="tmark ${tone}" style="left:${pos}%"></span></div>
+      <div class="tcents ${tone}">${Math.abs(c) <= 5 ? 'in tune' : `${c > 0 ? '+' : ''}${c}¢ · tune ${c > 0 ? 'down' : 'up'}`}</div>
+      <div class="tsub">${Math.abs(c) > 100 ? 'far from this string: check which one you’re playing' : `${OPEN_NAMES[t.open % 12]}${Math.floor(t.open / 12) - 1} · ${inst.tuning}`}</div>`;
+  } else {
+    html += '<div class="tnote idle">Play one open string…</div><div class="tsub">Listening · nothing is recorded</div>';
+  }
+  return `<div class="staffbox tunerbox gtuner">${html}</div>`;
+}
+
+async function gMicStart() {
+  const inst = FRETTED.find((i) => i.id === state.fretInst) ?? FRETTED[0];
+  gMicErr = null;
+  try {
+    await startMic({
+      minHz: freqOf(inst.strings[0] - 3), maxHz: freqOf(inst.strings.at(-1) + 15),
+      size: inst.id === 'bass' ? 4096 : 2048, // bass low E (41 Hz) needs the longer window
+      onFrame: (s) => {
+        gHeard = s;
+        const box = document.querySelector('.gtuner');
+        if (box) box.outerHTML = gTunerHtml(inst);
+      },
+    });
+  } catch (e) {
+    gMicErr = e?.name === 'NotAllowedError' ? 'Microphone access was blocked. Allow it for Chordfinder to use the tuner.'
+      : e?.name === 'NotFoundError' ? 'No microphone found.'
+        : `Microphone unavailable (${e?.message || e?.name || e}).`;
+  }
+  renderGuitar();
+}
+
+function gMicOff() {
+  stopMic();
+  gHeard = null;
+  gMicErr = null;
+  renderGuitar();
+}
+
+/** Answers the current question (a clicked spot, or an option id). */
+function answerFret(a) {
+  if (!gQuiz || gQuiz.answered !== null) return;
+  const q = gQuiz.q, inst = FRETTED.find((i) => i.id === state.fretInst) ?? FRETTED[0];
+  gQuiz.answered = a;
+  quizStats[gStatsKey()] = record(quizStats[gStatsKey()], isFretRight(q, a));
+  saveQuiz();
+  playNote(q.drill === 'find' ? inst.strings[a.string] + a.fret : inst.strings[q.string] + q.fret);
+  renderGuitar();
+}
+
+function nextFretQ() {
+  if (!gQuiz) return;
+  gQuiz = { key: gQuiz.key, q: makeFretQuestion({ drill: state.gDrill, level: gLevel(), instrumentId: state.fretInst, prev: gQuiz.q }), answered: null };
+  renderGuitar();
+}
+
+/** Clicks in practice mode; true when handled. */
+function fretQuizClick(e) {
+  const t = e.target;
+  if (segClick(e)) return true;
+  const lvl = t.closest('[data-qlevel]');
+  if (lvl) { update({ gLevels: { ...state.gLevels, [state.gDrill]: +lvl.dataset.qlevel } }); return true; }
+  if (t.closest('#gmic')) { micOn() ? gMicOff() : gMicStart(); return true; }
+  if (t.closest('#qnext')) { nextFretQ(); return true; }
+  if (t.closest('#qreset')) {
+    if (gResetArmed > Date.now()) { delete quizStats[gStatsKey()]; saveQuiz(); gResetArmed = 0; } else gResetArmed = Date.now() + 3000;
+    renderGuitar();
+    return true;
+  }
+  const a = t.closest('[data-qa]');
+  if (a) { answerFret(a.dataset.qa); return true; }
+  const tg = t.closest('.ftarget');
+  if (tg) { answerFret({ string: +tg.dataset.s, fret: +tg.dataset.f }); return true; }
+  const n = t.closest('.fnote');
+  if (n) playNote(+n.dataset.m);
+  return true;
+}
+
 // ------------------------------------------------------------ practice drills
 
 const QUIZ_STORE = 'chordfinder:quiz';
@@ -1570,10 +2175,14 @@ function styleDefaults(styleId) {
 function update(patch = {}) {
   if (playing) halt();
   if (linePlaying || alongPlaying) stopHorn();
+  if (gPlaying || gAlong) stopGuitar();
   if ('styleId' in patch && patch.styleId !== state.styleId) patch = { ...styleDefaults(patch.styleId), ...patch };
   const keyChanged = ['rootPc', 'modeId', 'modifier', 'styleId'].some((k) => k in patch && patch[k] !== state[k]);
+  // Each view's tuner has its own range and handler: switch it off when that changes.
+  const micReset = ['view', 'fretInst', 'gPractice'].some((k) => k in patch && patch[k] !== state[k]);
   Object.assign(state, patch);
-  if (keyChanged) { state.selected = 0; shiftOpen = null; hornFocus = null; }
+  if (keyChanged) { state.selected = 0; shiftOpen = null; hornFocus = null; gFocus = null; }
+  if ('gVoice' in patch || 'gPos' in patch) gAlt = {};
   // A displayed MIDI number means something else in another pitch or key.
   if (['rootPc', 'modeId', 'instrument', 'pitch'].some((k) => k in patch)) fingerMidi = null;
   // The exercise's notes belong to one key, scale and pitch.
@@ -1581,7 +2190,7 @@ function update(patch = {}) {
     if (exercise.ownsMic) { stopMic(); heard = null; }
     exercise = null;
   }
-  if (patch.view === 'chords' && micOn()) { stopMic(); heard = null; }
+  if (micReset && micOn()) { stopMic(); heard = null; gHeard = null; }
   if (patch.instrument && patch.instrument !== state.instrument && micOn()) queueMicrotask(micStart); // new pitch range
   save();
   const s = suggest(state);
@@ -1602,6 +2211,7 @@ function update(patch = {}) {
   renderDetail();
   document.body.dataset.view = state.view;
   if (state.view === 'sax') renderHorn();
+  if (state.view === 'guitar') renderGuitar();
 }
 
 // Right-click plays a whole progression instead of opening the browser menu.
@@ -1628,6 +2238,14 @@ function branchForRightClick(target) {
 }
 
 document.addEventListener('keydown', (e) => {
+  if (state.view === 'guitar' && state.gPractice && !e.ctrlKey && !e.altKey && !e.metaKey && !e.target.closest?.('input, select')) {
+    if (/^[0-9]$/.test(e.key) && gQuiz?.q.drill === 'name') {
+      const o = gQuiz.q.options[e.key === '0' ? 9 : +e.key - 1];
+      if (o) { e.preventDefault(); answerFret(o.id); }
+      return;
+    }
+    if (e.code === 'Space') { e.preventDefault(); if (gQuiz?.answered !== null) nextFretQ(); return; }
+  }
   if (state.view === 'sax' && state.practice && !e.ctrlKey && !e.altKey && !e.metaKey && quizKey(e)) {
     e.preventDefault();
     return;
@@ -1635,6 +2253,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Space' && !e.target.closest('input, select')) {
     e.preventDefault();
     if (state.view === 'sax') linePlaying || alongPlaying ? stopHorn() : playAlongNow();
+    else if (state.view === 'guitar') gPlaying || gAlong ? stopGuitar() : playGuitarAlong();
     else playing ? halt() : playBranch(selectedBranch());
   }
 });
