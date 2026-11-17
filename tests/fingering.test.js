@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fingeringsFor, KEYS } from '../ui/fingering.js';
+import { fingeringsFor, KEYS, LAYOUTS, DIAGRAM, shapeBox } from '../ui/fingering.js';
 import { SAX_RANGE } from '../ui/horn.js';
 
 const ids = new Set(KEYS.map((k) => k.id));
@@ -44,4 +44,19 @@ test('spot checks against the Woodwind Fingering Guide', () => {
   assert.deepEqual(fingeringsFor(70).find((x) => x.name === 'Side B♭').keys, ['L1', 'L2', 'sideBb']);
   assert.deepEqual(std(89), ['oct', 'palmD', 'palmEb', 'palmF', 'sideE']); // high F
   assert.ok(has(90, 'highFs'));
+});
+
+test('every diagram layout draws every key inside the box, without overlaps', () => {
+  for (const l of LAYOUTS) {
+    assert.deepEqual(Object.keys(l.keys).sort(), [...ids].sort(), `${l.id}: keys`);
+    const boxes = Object.entries(l.keys).map(([id, s]) => [id, shapeBox(s)]);
+    for (const [id, [x0, y0, x1, y1]] of boxes) {
+      assert.ok(x0 >= 0 && y0 >= 0 && x1 <= DIAGRAM.w && y1 <= DIAGRAM.h, `${l.id}: ${id} outside the box`);
+    }
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const [a, A] = boxes[i], [b, B] = boxes[j];
+      const overlap = A[0] < B[2] && B[0] < A[2] && A[1] < B[3] && B[1] < A[3];
+      assert.ok(!overlap, `${l.id}: ${a} overlaps ${b}`);
+    }
+  }
 });

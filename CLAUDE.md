@@ -16,7 +16,7 @@ the release `.exe`.
 | `ui/horn.js` | Pure: sax view — `INSTRUMENTS` (transposition), `SAX_RANGE`, `REGISTERS`, `SCALES` (mode/pentatonics/blues), `chordLayer` (chord tones + chord-scale), `guideLine`, `hornView()`, `formatNote` (letters/Dutch/fixed do), `solfa` (movable do), `degreeLabel` |
 | `ui/guitar.js` | Pure: chord voicings (`OPEN_SHAPES` first, else a movable-shape search: `voicing`, `shapeText`, `baseFret`) and the guitar view: neck (`FRETTED` instruments, `fretboardView` with optional chord focus, `scaleRun`), `alternates` (≤ 6 shapes up the neck), `voiceLead`, `movement`, `scalePositions`, `shapeInPosition`; staff/tab notes (`WRITTEN` = +12, `positionTab`, `shapeTab`, `bassArpeggio`, `placeNote`) |
 | `ui/strum.js` | Pure: strumming patterns (`STRUMS`, one bar of 8/16 steps: D U x - 1–6), `STYLE_STRUM` (Auto per style), `strumBar` / `strumProgression` (timed events), `strumNotes` (for MIDI) |
-| `ui/fingering.js` | Pure: `KEYS` diagram layout, `fingeringsFor(writtenMidi)` (standard + common alternates) |
+| `ui/fingering.js` | Pure: `KEYS` (ids + names), `LAYOUTS` (diagram geometry per layout: schematic / chart / body; `shapeBox` for tests), `fingeringsFor(writtenMidi)` (standard + common alternates) |
 | `ui/pitch.js`, `ui/mic.js`, `ui/mic-worklet.js` | Tuner: pure YIN pitch detection + note tracker; mic capture via AudioWorklet (nothing recorded); `startMic({ size })` sets the analysis block (2048; 4096 for bass, since the lowest pitch found is about rate / (size / 2)) |
 | `ui/quiz.js` | Pure: practice drills (`DRILLS`, `makeQuestion`, cadence, resolution, scoring) |
 | `ui/fretquiz.js` | Pure: guitar-view drills (`FRET_DRILLS` find/name, `FRET_LEVELS`, `makeFretQuestion`, `isFretRight`) and `nearestString` for the string tuner |
@@ -320,6 +320,10 @@ phase, so build one phase at a time and check back.
   strip draws mini diagrams under the focus staff (`state.strip`). Scale
   staff, panel and lead sheet flow as one wrapping row (`.hstaves` is
   `display: contents`).
+- Diagram layout (`state.fingerLayout`, Options ▾): Schematic | Chart
+  (compact chart: octave wedge, pinky table, side bars) | Body (keys around
+  two body rails). Pearls are circles; levers, side and pinky keys are bars
+  or pads. A test keeps every key inside 100×240 with no overlaps.
 
 ## MIDI drag-out (settled design)
 

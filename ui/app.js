@@ -5,7 +5,7 @@ import { DRILLS, drillById, makeQuestion, isRight, record, accuracy, ready, empt
 import { progressionToMidi, midiFileName, melodyToMidi, notesToMidi, GM_SAX, GM_GUITAR } from './midi.js';
 import { INSTRUMENTS, REGISTERS, SCALES, SAX_RANGE, hornView, formatNote, solfa, degreeLabel, chordLayer, chordSymbol, guideLine, octaveOf } from './horn.js';
 import { keySignature, layoutStaff, STAFF } from './staff.js';
-import { KEYS, DIAGRAM, fingeringsFor } from './fingering.js';
+import { KEYS, DIAGRAM, fingeringsFor, LAYOUTS, layoutById } from './fingering.js';
 import { startMic, stopMic, micOn } from './mic.js';
 import { freqOf } from './pitch.js';
 import { STRUMS, strumById, styleStrum, customStrum, cleanSteps, cycleStep, resizeSteps, counts, strumProgression, strumNotes } from './strum.js';
@@ -52,7 +52,7 @@ const state = Object.assign(
     styleId: 'theory', length: 'phrase', guitar: false, theme: 'dark', corners: 'round',
     // Sax view
     view: 'chords', instrument: 'alto', pitch: 'written', hornScale: 'mode', names: 'letters', solfa: false, minorDo: 'do',
-    bars: 1, guideLine: false, show: 'both', underNames: true, strip: true,
+    bars: 1, guideLine: false, show: 'both', underNames: true, strip: true, fingerLayout: 'schematic',
     practice: false, drill: 'degree', levels: { degree: 0, tone: 0, read: 0 },
     // Guitar view
     fretInst: 'guitar', fretLabels: 'names', lefty: false, gVoice: 'easy', gPos: 0, strum: 'auto', customStrum: null,
@@ -730,6 +730,7 @@ function renderHorn() {
         <div class="hfield"><span>Show</span>${seg('show', [['both', 'Staff + grid'], ['staff', 'Staff'], ['grid', 'Grid']])}</div>
         <div class="hfield"><span>Names under notes</span>${seg('underNames', [[true, 'On'], [false, 'Off']])}</div>
         <div class="hfield"><span>Fingering strip</span>${seg('strip', [[true, 'On', 'Small fingering charts under the scale staff'], [false, 'Off']])}</div>
+        <div class="hfield"><span>Fingering chart</span>${seg('fingerLayout', LAYOUTS.map((l) => [l.id, l.name, l.tip]))}</div>
       </div>
     </div>`;
   $('inst').onchange = (e) => update({ instrument: e.target.value });
@@ -1006,19 +1007,20 @@ function printSheet() {
 // The note the fingering panel shows (displayed MIDI), null = the tonic.
 let fingerMidi = null;
 
-/** A fingering diagram: pressed keys filled. Full size has key names as
- *  tooltips and the hand labels. */
+/** A fingering diagram in the chosen layout (`state.fingerLayout`): pressed
+ *  keys filled. Full size has key names as tooltips and the hand labels. */
 function fingerSvg(keys, { scale = 1, full = false } = {}) {
-  const on = new Set(keys);
+  const on = new Set(keys), lay = layoutById(state.fingerLayout);
   const shapes = KEYS.map((k) => {
-    const cls = `fk${on.has(k.id) ? ' on' : ''}`;
+    const s = lay.keys[k.id], a = `class="fk${on.has(k.id) ? ' on' : ''}"`;
     const t = full ? `<title>${esc(k.name)}</title>` : '';
-    return k.s === 'c'
-      ? `<circle class="${cls}" cx="${k.x}" cy="${k.y}" r="${k.r}">${t}</circle>`
-      : `<ellipse class="${cls}" cx="${k.x}" cy="${k.y}" rx="${k.rx}" ry="${k.ry}">${t}</ellipse>`;
+    if (s.c) return `<circle ${a} cx="${s.c[0]}" cy="${s.c[1]}" r="${s.c[2]}">${t}</circle>`;
+    if (s.e) return `<ellipse ${a} cx="${s.e[0]}" cy="${s.e[1]}" rx="${s.e[2]}" ry="${s.e[3]}">${t}</ellipse>`;
+    if (s.r) return `<rect ${a} x="${s.r[0]}" y="${s.r[1]}" width="${s.r[2]}" height="${s.r[3]}" rx="${s.r[4] ?? 0}">${t}</rect>`;
+    return `<path ${a} d="${s.p}">${t}</path>`;
   }).join('');
-  const deco = `<line class="fdiv" x1="34" y1="${DIAGRAM.split}" x2="66" y2="${DIAGRAM.split}"/>`
-    + (full ? `<text class="fhand" x="98" y="60">L</text><text class="fhand" x="98" y="176">R</text>` : '');
+  const deco = lay.deco.map(([x1, y1, x2, y2, cls]) => `<line class="${cls}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`).join('')
+    + (full ? lay.hands.map(([x, y], i) => `<text class="fhand" x="${x}" y="${y}">${'LR'[i]}</text>`).join('') : '');
   return `<g transform="scale(${scale})">${deco}${shapes}</g>`;
 }
 

@@ -629,6 +629,7 @@ body[data-view="sax"] .horn { display: grid; }
 .fk.on { fill: var(--accent); stroke: var(--accent); }
 .fdiag .fk:hover { stroke: var(--text); stroke-width: 2; }
 .fdiv { stroke: var(--faint); stroke-width: 1; stroke-dasharray: 2 3; }
+.frail { stroke: var(--faint); stroke-width: 1.4; }
 .fhand { fill: var(--faint); font-size: 10px; font-weight: 700; text-anchor: end; }
 .staff .fmini .fk { stroke-width: 2.6; }
 .staff .fmini { cursor: default; }
