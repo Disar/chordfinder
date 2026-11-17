@@ -14,6 +14,11 @@ Types: IDEA, TODO, FIX. Priority: 1 = highest, 5 = lowest. `P2*` = priority infe
 - [ ] **P2\*** · IDEA — Guitar view: arpeggios per chord inside a position _(2026-11-16)_
   - Combine `chordLayer` (ui/horn.js) with `scalePositions` (ui/guitar.js); chord tones already shown when `gFocus` is set, but not per position as a run
   - Play could walk the arpeggio like Play scale walks the position
+- [ ] **P2\*** · IDEA — Start on: let the user pick which chord a progression starts from (play panel). Loops rotate in Play/MIDI (same chords, different feel); resolving progressions can drop the opening tonic so I only arrives at the end (ii–V–I as ii V I). Graph stays tonic-centred. _(2026-11-16)_
+  - Rotate in `sequenceFor()` (ui/app.js), which feeds both Play and MIDI, so they keep matching
+  - Library chord lists omit the tonic (`p(..., ['ii', 'V'])` = I ii V); the start choice applies to `[tonic, ...branch]`
+  - `length: 'phrase'` adds a closing root when resolving; `'loop'` pads to 4 bars. Decide how each mode treats a rotated start
+  - Per-branch, not persisted? Branch ids are template indexes (survive parallel shift), so `start` could key off them
 - [ ] **P3\*** · IDEA — Guitar view: triads and inversions on string sets _(2026-11-16)_
   - String sets 1-2-3, 2-3-4, 3-4-5; voice-lead per set with the `voiceLead` DP in ui/guitar.js
   - Needs a voicing generator outside the current rules (root in bass, ≤ 4 fingers)
