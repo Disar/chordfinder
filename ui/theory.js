@@ -28,7 +28,7 @@ export function noteName(letter, acc) {
 
 // Spelling candidates per pitch class, [letter, accidental]; the first is
 // the tie-break preference.
-const SPELLINGS = [
+export const SPELLINGS = [
   [[0, 0]], [[1, -1], [0, 1]], [[1, 0]], [[2, -1], [1, 1]], [[2, 0]], [[3, 0]],
   [[3, 1], [4, -1]], [[4, 0]], [[5, -1], [4, 1]], [[5, 0]], [[6, -1], [5, 1]], [[6, 0]],
 ];

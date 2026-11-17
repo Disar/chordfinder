@@ -1,4 +1,4 @@
-import { MODES, MODIFIERS, MODE_ABBR, ROOT_LABELS, STYLES, mod, styleById, styleModes, suggest } from './theory.js';
+import { MODES, MODIFIERS, MODE_ABBR, SPELLINGS, STYLES, mod, styleById, styleModes, suggest } from './theory.js';
 import { buildTree, layout, rootOffset, rootPaths } from './graph.js';
 import { playChord, playSequence, playNote, playLine, playAlong, playOver, playStrum, stop } from './audio.js';
 import { DRILLS, drillById, makeQuestion, isRight, record, accuracy, ready, emptyStats } from './quiz.js';
@@ -70,14 +70,23 @@ let playing = false;
 
 // ------------------------------------------------------------ side panel
 
+let pianoNames = null; // note-name style the root piano was last drawn with
+
+/** Root piano, labelled in the chosen note-name style; redrawn only when that changes. */
 function renderPiano() {
+  if (pianoNames === state.names) return;
+  pianoNames = state.names;
+  const label = SPELLINGS.map((opts) => opts.map(([l, a]) => formatNote(l, a, state.names)));
   const whites = [0, 2, 4, 5, 7, 9, 11];
   const blacks = [[1, 0], [3, 1], [6, 3], [8, 4], [10, 5]]; // [pc, white index it sits after]
   const kw = 100 / 7;
   $('piano').innerHTML =
-    whites.map((pc) => `<button class="white" data-pc="${pc}" title="${ROOT_LABELS[pc]}">${ROOT_LABELS[pc]}</button>`).join('') +
-    blacks.map(([pc, i]) => `<button class="black" data-pc="${pc}" title="${ROOT_LABELS[pc]}"
-      style="left:calc(${(i + 1) * kw}% - 12px)">${ROOT_LABELS[pc].replace('/', '<br>')}</button>`).join('');
+    whites.map((pc) => `<button class="white" data-pc="${pc}" title="${label[pc].join('/')}">${label[pc].join('/')}</button>`).join('') +
+    blacks.map(([pc, i]) => `<button class="black" data-pc="${pc}" title="${label[pc].join('/')}"
+      style="left:calc(${(i + 1) * kw}% - 12px)">${label[pc].join('<br>')}</button>`).join('');
+}
+
+function wirePiano() {
   $('piano').onclick = (e) => {
     const b = e.target.closest('[data-pc]');
     if (b) update({ rootPc: +b.dataset.pc });
@@ -91,7 +100,7 @@ function renderStatic() {
   $('style').innerHTML = STYLES.filter((s) => !s.group).map(opt).join('')
     + groups.map((g) => `<optgroup label="${esc(g)}">${STYLES.filter((s) => s.group === g).map(opt).join('')}</optgroup>`).join('');
   $('style').onchange = (e) => update({ styleId: e.target.value });
-  renderPiano();
+  wirePiano();
   $('modes').innerHTML = MODES.map((m) =>
     `<button data-mode="${m.id}"><b>${m.name}${m.alias ? ` <span style="color:var(--faint);font-weight:400">(${m.alias})</span>` : ''}</b><small>${esc(m.feel)}</small></button>`).join('');
   $('modes').onclick = (e) => { const b = e.target.closest('[data-mode]'); if (b) update({ modeId: b.dataset.mode }); };
@@ -114,6 +123,7 @@ function renderStatic() {
 }
 
 function markActive() {
+  renderPiano();
   document.querySelectorAll('#piano [data-pc]').forEach((b) => b.classList.toggle('on', +b.dataset.pc === state.rootPc));
   const style = styleById(state.styleId), usable = styleModes(style);
   $('style').value = style.id;
