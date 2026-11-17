@@ -35,15 +35,15 @@ Pick a key and a mode, and Chordfinder draws a map of progressions that start on
 
 Switch the top bar from **Chords** to **Sax** for a practice view aimed at saxophone students.
 
-![The sax view on alto in a jazz ii–V–I: the Am7 chord tones, staff with fingerings, guide-tone line and range grid](docs/sax-view.png)
+![The sax view on alto in a jazz ii–V–I: the Am7 chord tones, staff with Chart-style fingerings, guide-tone line and range grid](docs/sax-view.png)
 
 - **Your instrument, your pitch.** Soprano, alto, tenor or baritone, shown in written or concert pitch. The root picker stays in concert pitch; chord symbols and keys transpose properly (concert B major's V on alto is E♭, not D♯).
-- **Range grid.** Every note in the sax range (written B♭3–F♯6), one row per octave, with the octave-key and palm-key registers marked. Note names as letters, Dutch (Cis, Bes) or fixed do, with optional movable do.
+- **Range grid.** Every note in the sax range (written B♭3–F♯6), one row per octave, with the octave-key and palm-key registers marked. Note names as letters, Dutch (Cis, Bes) or fixed do, with optional movable do; the root piano follows the same choice.
 - **Scales.** The mode, its pentatonics and the blues scale, played back on demand.
 - **Chord tones and chord-scales.** Click a chord in the progression bar to see its chord tones, guide tones (3rd and 7th) and the scale to play over it — borrowed chords show exactly which notes change.
 - **Guide-tone line and play-along.** A smooth guide-tone line through the progression and a looping backing track with count-in to practise it over (Space toggles it).
 - **Staff notation.** The scale or chord arpeggio and the progression as a lead sheet, with the right key signature and clef for your instrument.
-- **Fingerings.** A fingering diagram for any hovered note (standard plus common alternates) and an optional strip of mini diagrams under the staff.
+- **Fingerings.** A fingering diagram for any hovered note (standard plus common alternates) and an optional strip of mini diagrams under the staff. Three chart styles: **Schematic**, a compact **Chart** like a fingering book's, or **Body**, with the keys around an outline of the horn.
 - **Tuner and feedback.** Turn on the microphone to see the note you play, play phrases back by ear, or get feedback while playing along. Nothing is recorded or stored.
 - **Practice mode.** Ear and reading drills — scale degrees after a cadence, chord tones over a chord, reading notes from the staff (answer by name or by playing it) — with levels and scores.
 - **Practice sheet and melody MIDI.** Print the staves with the guide-tone line, or drag the scale or guide-tone line out as MIDI.
@@ -95,7 +95,7 @@ The builds aren't code-signed, so your system may warn on first launch:
 | **Names \| Guitar** in the play panel | Show a guitar chord diagram under each chord |
 | **Chords \| Sax \| Guitar** switch | Switch between the progression map, the sax view and the guitar view |
 | Sax view: **Explore \| Practice** | Explore scales and chords, or run the practice drills (keys 1–9/0 answer, R replays, Space next) |
-| Sax view: **Options ▾** | Note names, movable do, what to show (staff, grid or both), fingering strip |
+| Sax view: **Options ▾** | Note names, movable do, what to show (staff, grid or both), fingering strip and chart style |
 | Sax view: **🖨 Practice sheet** | Print the staves with the guide-tone line |
 | Guitar view: **Explore \| Practice** | Explore the neck, or run the note drills and the string tuner (keys 1–9/0 answer, Space next) |
 | Guitar view: **Position**, **Shapes**, **Strum** | Limit the neck to one position, choose how chord shapes are picked, pick or edit a strumming pattern |
