@@ -17,6 +17,7 @@
 - **Parallel mode shift**: preview and jump to C minor from C major
 - **Listen**: click a chord, right-click a progression, Space to play; count-in on or off, start from any chord
 - **Guitar diagrams or piano voicings** under each chord, strummed or comped
+- **Keyboard or guitar neck** under the play panel showing the current chord, foldable
 - **MIDI drag-out**: whole progression, or a single chord as a one-bar clip
 - **Phrase or loop** length
 - **8 themes**, rounded or boxy corners

@@ -237,6 +237,12 @@ panel, every mode selectable, controls in the header (`#gbar`: instrument
   editor, the same `state.strum` as the guitar view (`strumOptions`,
   `wireStrumInputs`, `customStrumControls(id)` are shared). The header is
   one line: name and cadence shorten with an ellipsis.
+  Under the chips a foldable strip shows the playhead / playing chord:
+  Guitar → a neck (`neckSvg`, fixed 140px height, id `cneck`); Names /
+  Piano → an 88-key keyboard (`chordKeys` in pianoview.js, max 120px;
+  Names = the `voiceSequence` notes Play sounds, Piano = the panel
+  voicing). Folded per mode in `state.folded['cinst:<panel>']`; Piano
+  starts folded (`cinstFolded()`). `renderCinst(i)` in app.js.
   Each chord chip and graph node also drags out as a one-bar clip
   (`chordMidi`; `wireMidiDrag(el, build, { click: false })` keeps click =
   play; nodes use `pick` on `#canvas`, since SVG elements can't be HTML5

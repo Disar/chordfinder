@@ -2,7 +2,7 @@ import { MODES, MODIFIERS, MODE_ABBR, SPELLINGS, STYLES, mod, styleById, styleMo
 import { buildTree, layout, rootOffset, rootPaths } from './graph.js';
 import { playChord, playSequence, playNote, playNotes, playLine, playAlong, playOver, playStrum, stop } from './audio.js';
 import { DRILLS, drillById, makeQuestion, isRight, record, accuracy, ready, emptyStats } from './quiz.js';
-import { progressionToMidi, midiFileName, melodyToMidi, notesToMidi, GM_SAX, GM_GUITAR } from './midi.js';
+import { voiceSequence, progressionToMidi, midiFileName, melodyToMidi, notesToMidi, GM_SAX, GM_GUITAR } from './midi.js';
 import { INSTRUMENTS, REGISTERS, SCALES, SAX_RANGE, hornView, formatNote, solfa, degreeLabel, chordLayer, chordSymbol, guideLine, octaveOf } from './horn.js';
 import { keySignature, layoutStaff, STAFF } from './staff.js';
 import { KEYS, DIAGRAM, fingeringsFor, LAYOUTS, layoutById } from './fingering.js';
@@ -10,7 +10,7 @@ import { startMic, stopMic, micOn } from './mic.js';
 import { freqOf } from './pitch.js';
 import { STRUMS, strumById, styleStrum, customStrum, cleanSteps, cycleStep, resizeSteps, counts, strumProgression, strumNotes } from './strum.js';
 import { FRET_DRILLS, FRET_LEVELS, PRACTICE_FRETS, fretDrillById, makeFretQuestion, isFretRight, pcName, nearestString } from './fretquiz.js';
-import { initPiano, renderPiano as renderPianoView, stopPiano, pianoBusy, resetPiano, pianoKey, panelVoicings, panelComp, compMidiNotes, miniKeys, pianoComp, GM_PIANO } from './pianoview.js';
+import { initPiano, renderPiano as renderPianoView, stopPiano, pianoBusy, resetPiano, pianoKey, panelVoicings, panelComp, compMidiNotes, miniKeys, chordKeys, pianoComp, GM_PIANO } from './pianoview.js';
 import { COMPS, styleComp } from './comp.js';
 import { voicing, shapeText, baseFret, voicingMidi, alternates, voiceLead, scalePositions, shapeInPosition, shapePosition, positionTab, shapeTab, bassArpeggio, FRETTED, FRETS, INLAYS, fretboardView, scaleRun as fretRun } from './guitar.js';
 
@@ -374,6 +374,7 @@ function renderDetail() {
     pianoVoiced = all.map((_, i) => ({ cc: pv.ccs[i], v: pv.voicings[i] }));
   }
   const chips = seq.map((c, i) => chip(c, i, i === 0)).join('<span class="arrow">→</span>');
+  cinst = { chords: [...seq, ...(b.end === 'resolve' ? [t] : [])], piano: pianoVoiced };
   const shifts = parallelShifts();
   const ending = b.end === 'resolve'
     ? `<span class="arrow">→</span>${chip(t, seq.length, true)}<span class="arrow" title="Resolves to the root">↺</span>`
@@ -404,8 +405,15 @@ function renderDetail() {
       <button class="midi" id="midi" title="${panelStrum() ? `Drag into your DAW: this progression strummed on guitar (${esc(currentStrum().name)})` : state.panel === 'piano' ? `Drag into your DAW: this progression with piano voicings, comped (${esc(pianoComp().name)})` : 'Drag into your DAW to drop this progression in as MIDI'}">
         <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><g fill="currentColor"><circle cx="4" cy="3" r="1.3"/><circle cx="10" cy="3" r="1.3"/><circle cx="4" cy="7" r="1.3"/><circle cx="10" cy="7" r="1.3"/><circle cx="4" cy="11" r="1.3"/><circle cx="10" cy="11" r="1.3"/></g></svg>
         MIDI</button>
+    </div>
+    <div class="cinst${cinstFolded() ? ' folded' : ''}" id="cinst">
+      <button class="pfold" id="cinstfold" title="${cinstFolded() ? 'Show' : 'Hide'} the ${state.panel === 'guitar' ? 'neck' : 'keyboard'}"><span class="caret">${cinstFolded() ? '▸' : '▾'}</span>${state.panel === 'guitar' ? 'Neck' : 'Keyboard'}</button>
+      <div class="cinstbody" id="cinstbody"></div>
     </div>`;
   showNow(nowChord);
+  renderCinst(playhead);
+  if ($('cinstbody')) $('cinstbody').onclick = (e) => { const k = e.target.closest('[data-m]'); if (k) playNote(+k.dataset.m); };
+  if ($('cinstfold')) $('cinstfold').onclick = () => { state.folded = { ...state.folded, [`cinst:${state.panel}`]: !cinstFolded() }; save(); renderDetail(); };
   $('play').onclick = () => (playing ? halt() : playBranch(b, playhead));
   $('detail').querySelector(`.row .chord[data-i="${playhead}"]`)?.classList.add('head');
   wireMidiDrag($('midi'), () => midiFor(b));
@@ -439,8 +447,35 @@ function renderDetail() {
     if (playing) return playBranch(b, playhead, false);
     $('detail').querySelectorAll('.row .chord.head').forEach((x) => x.classList.remove('head'));
     c.classList.add('head');
+    renderCinst(playhead);
     sound(+c.dataset.i >= seq.length ? t : seq[+c.dataset.i]);
   };
+}
+
+// The Chords page's neck / keyboard under the play panel: the chords it can
+// show (the closing root too) and, with Piano on, their voicings.
+let cinst = { chords: [], piano: [] };
+// Folded per panel mode; with Piano on the chips already show the keys, so it starts folded.
+const cinstFolded = () => state.folded[`cinst:${state.panel}`] ?? state.panel === 'piano';
+
+/** Shows chord `i` of the play panel on the neck (Guitar) or keyboard (Piano). */
+function renderCinst(i) {
+  const el = $('cinstbody');
+  if (!el || cinstFolded()) return;
+  const c = cinst.chords[Math.min(i, cinst.chords.length - 1)];
+  if (!c) return;
+  if (state.panel === 'piano') {
+    const pv = cinst.piano[Math.min(i, cinst.piano.length - 1)];
+    el.innerHTML = pv ? chordKeys(pv.v) : '';
+  } else if (state.panel === 'names') {
+    // The notes Play sounds (voice-led like playSequence), named from the chord.
+    const ms = voiceSequence(cinst.chords)[Math.min(i, cinst.chords.length - 1)];
+    const name = new Map(c.semis.map((x, j) => [mod(c.pc + x, 12), c.notes[j]]));
+    el.innerHTML = chordKeys({ notes: ms.map((m, j) => ({ midi: m, hand: j ? 'R' : 'L', bass: !j, name: name.get(mod(m, 12)) ?? '' })) });
+  } else {
+    const v = fretboardView({ instrumentId: 'guitar', rootPc: state.rootPc, modeId: state.modeId, scaleId: state.hornScale, chord: c });
+    el.innerHTML = neckSvg(v, voicing(c)).replace('id="neck"', 'id="cneck"');
+  }
 }
 
 // Whether the play panel's Strum ▾ popover is open (kept across re-renders).
@@ -797,6 +832,7 @@ function playBranch(b, startAt = 0, countIn = false) {
     document.querySelector(`#detail .chord[data-i="${i}"]`)?.classList.add('playing');
     if ($('play')) $('play').textContent = '■ Stop';
     showNow(chords[i]);
+    renderCinst(i);
   }, () => { playhead = 0; halt(); }, panelRhythm(chords, beats), {
     countIn, startAt: Math.min(startAt, chords.length - 1),
     onCount: (n) => { const p = $('play'); if (p) p.textContent = `■ ${n + 1}…`; },

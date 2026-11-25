@@ -130,6 +130,13 @@ function keyboardSvg({ lo, hi, marks = new Map(), dots = new Map(), id = 'keys',
   return `<svg class="keys${small ? ' small' : ''}" id="${id}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Piano keyboard">${whites.map(key).join('')}${keys.filter(isBlack).map(key).join('')}${cs}</svg>`;
 }
 
+/** The Chords page's keyboard (88 keys): a voicing's keys coloured and named. */
+export function chordKeys(v) {
+  const marks = new Map();
+  for (const n of v.notes) marks.set(n.midi, { cls: n.hand === 'R' ? 'vR' : n.bass ? 'vB' : 'vL', label: n.name ?? (S().pLabels === 'degrees' ? n.label : nm(n)) });
+  return keyboardSvg({ lo: 21, hi: 108, marks, id: 'ckeys' });
+}
+
 /** A small keyboard for a play-panel chord: the voicing's keys coloured. */
 export function miniKeys(v) {
   const ms = v.notes.map((n) => n.midi);
