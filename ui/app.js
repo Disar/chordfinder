@@ -1,6 +1,6 @@
 import { MODES, MODIFIERS, MODE_ABBR, SPELLINGS, STYLES, mod, styleById, styleModes, suggest } from './theory.js';
 import { buildTree, layout, rootOffset, rootPaths } from './graph.js';
-import { playChord, playSequence, playNote, playLine, playAlong, playOver, playStrum, stop } from './audio.js';
+import { playChord, playSequence, playNote, playNotes, playLine, playAlong, playOver, playStrum, stop } from './audio.js';
 import { DRILLS, drillById, makeQuestion, isRight, record, accuracy, ready, emptyStats } from './quiz.js';
 import { progressionToMidi, midiFileName, melodyToMidi, notesToMidi, GM_SAX, GM_GUITAR } from './midi.js';
 import { INSTRUMENTS, REGISTERS, SCALES, SAX_RANGE, hornView, formatNote, solfa, degreeLabel, chordLayer, chordSymbol, guideLine, octaveOf } from './horn.js';
@@ -10,6 +10,8 @@ import { startMic, stopMic, micOn } from './mic.js';
 import { freqOf } from './pitch.js';
 import { STRUMS, strumById, styleStrum, customStrum, cleanSteps, cycleStep, resizeSteps, counts, strumProgression, strumNotes } from './strum.js';
 import { FRET_DRILLS, FRET_LEVELS, PRACTICE_FRETS, fretDrillById, makeFretQuestion, isFretRight, pcName, nearestString } from './fretquiz.js';
+import { initPiano, renderPiano as renderPianoView, stopPiano, pianoBusy, resetPiano, pianoKey, panelVoicings, panelComp, compMidiNotes, miniKeys, pianoComp, GM_PIANO } from './pianoview.js';
+import { COMPS, styleComp } from './comp.js';
 import { voicing, shapeText, baseFret, voicingMidi, alternates, voiceLead, scalePositions, shapeInPosition, shapePosition, positionTab, shapeTab, bassArpeggio, FRETTED, FRETS, INLAYS, fretboardView, scaleRun as fretRun } from './guitar.js';
 
 // Branch (lane) colours per theme; hex because graph strokes append an alpha.
@@ -44,12 +46,15 @@ const loadSaved = () => {
   if ((saved.v ?? 1) < 2) delete saved.compact; // v2: compact view became the default
   delete saved.midiMode; // setting from the removed virtual-file experiment
   delete saved.returnStyle; // picker hidden: always the R node (drop this line if the picker comes back)
+  // The play panel's Names | Guitar toggle became Names | Guitar | Piano.
+  if (saved.panel === undefined && 'guitar' in saved) saved.panel = saved.guitar ? 'guitar' : 'names';
+  delete saved.guitar;
   return saved;
 };
 const state = Object.assign(
   { rootPc: 0, modeId: 'ionian', modifier: 'triad', color: 'triad', selected: 0, bpm: 96, zoom: 1,
     returnStyle: 'node', compact: true, borrowed: false, chordsOpen: true, settingsOpen: false,
-    styleId: 'theory', length: 'phrase', guitar: false, theme: 'dark', corners: 'round',
+    styleId: 'theory', length: 'phrase', panel: 'names', theme: 'dark', corners: 'round', countIn: true,
     // Sax view
     view: 'chords', instrument: 'alto', pitch: 'written', hornScale: 'mode', names: 'letters', solfa: false, minorDo: 'do',
     bars: 1, guideLine: false, show: 'both', underNames: true, strip: true, fingerLayout: 'schematic',
@@ -57,7 +62,11 @@ const state = Object.assign(
     folded: {}, scaleSize: 1, fingerSize: 1, // collapsed sax boxes (scale / lead / finger); size steps 1–3
     // Guitar view
     fretInst: 'guitar', fretLabels: 'names', lefty: false, gVoice: 'easy', gPos: 0, strum: 'auto', customStrum: null, pStrum: true,
-    gPractice: false, gDrill: 'find', gLevels: { find: 0, name: 0 } },
+    gPractice: false, gDrill: 'find', gLevels: { find: 0, name: 0 },
+    // Piano view
+    pianoSize: 61, pLabels: 'names', pHands: 'both', pOct: 1, pVoicing: 'close', pExt: 'as', pAltered: false,
+    pReharm: [], comp: 'auto', pKeys: false, pEcho: true,
+    pPractice: false, pDrill: 'play', pLevels: { play: 0, quality: 0, inversion: 0, read: 0 } },
   loadSaved(),
   { v: STATE_VERSION },
 );
@@ -68,6 +77,21 @@ document.documentElement.dataset.corners = state.corners;
 
 let model = null; // { s: suggestion, tree, g: geometry }
 let playing = false;
+// Play panel playhead: the chord Play starts from (set by clicking a chord).
+let playhead = 0;
+
+/** The count-in toggle next to every Play / Play along button (shared). */
+const metroButton = () => `<button class="metro${state.countIn ? ' on' : ''}" data-countin title="Count-in ${state.countIn ? 'on: four clicks, then play' : 'off: play at once'} (click to turn ${state.countIn ? 'off' : 'on'})" aria-pressed="${state.countIn}">
+  <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.6 1.5h4.8l3.1 13H2.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 12 11.8 4.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10.3" cy="7.3" r="1.3" fill="currentColor"/><path d="M4 12h8" stroke="currentColor" stroke-width="1.2"/></svg>
+</button>`;
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-countin]')) update({ countIn: !state.countIn });
+});
+
+/** Clickable areas over each bar of a progression staff (and its chord
+ *  name): `data-bar` = chord index. Notes sit on top and keep their own click. */
+const barHits = (g, y0, y1) => g.barBoxes.map((b, i) =>
+  `<rect class="sbarhit" data-bar="${i}" x="${b.x + 1}" y="${y0}" width="${b.w - 2}" height="${y1 - y0}"><title>Hear ${esc(b.label ?? '')} · play from here</title></rect>`).join('');
 
 // ------------------------------------------------------------ side panel
 
@@ -121,6 +145,10 @@ function renderStatic() {
   $('view').onclick = (e) => { const b = e.target.closest('[data-view]'); if (b) update({ view: b.dataset.view }); };
   wireHorn();
   wireGuitar();
+  initPiano({
+    state, save, update, esc, seg, segClick, modeLabel, lent, chordTitle, wireMidiDrag, midiButton, renderDetail,
+    model: () => model, selectedBranch, quizStats: () => quizStats, saveQuiz, metroButton, barHits,
+  });
 }
 
 function markActive() {
@@ -325,16 +353,26 @@ function selectedBranch() {
   return model.tree.branches.find((b) => b.id === state.selected) ?? model.tree.branches[0];
 }
 
+let playheadFor = null; // the branch the playhead belongs to
 function renderDetail() {
   const b = selectedBranch();
+  if (playheadFor !== b.id) { playhead = 0; playheadFor = b.id; }
   const color = laneColor(b.lane);
   const t = model.s.tonic;
   const seq = [t, ...b.chords];
   const chip = (c, i, root) => {
-    const v = state.guitar && voicing(c);
-    const tip = chordTitle(c) + (v ? ` · guitar ${shapeText(v)}` : '');
-    return `<button class="chord${root ? ' root' : ''}${lent(c) ? ' borrowed' : ''}${v ? ' gtr' : ''}" data-i="${i}" title="${esc(tip)} · drag out as MIDI${v && panelStrum() ? ' (strummed)' : ''}"><b>${esc(c.name)}</b>${v ? chordBox(v) : ''}<small>${esc(c.roman)}</small></button>`;
+    const v = state.panel === 'guitar' && voicing(c);
+    const pv = state.panel === 'piano' ? pianoVoiced[i] : null;
+    const tip = chordTitle(c) + (v ? ` · guitar ${shapeText(v)}` : '') + (pv ? ` · piano ${pv.cc.name}: ${pv.v.notes.map((n) => n.label).join(' ')}` : '');
+    return `<button class="chord${root ? ' root' : ''}${lent(c) ? ' borrowed' : ''}${v ? ' gtr' : ''}${pv ? ' pno' : ''}" data-i="${i}" title="${esc(tip)} · drag out as MIDI${v && panelStrum() ? ' (strummed)' : ''}"><b>${esc(pv ? pv.cc.name : c.name)}</b>${v ? chordBox(v) : ''}${pv ? miniKeys(pv.v) : ''}<small>${esc(c.roman)}</small></button>`;
   };
+  // Piano: the sequence voice-led together (the closing root chord too).
+  let pianoVoiced = [];
+  if (state.panel === 'piano') {
+    const all = [...seq, ...(b.end === 'resolve' ? [t] : [])];
+    const pv = panelVoicings(all);
+    pianoVoiced = all.map((_, i) => ({ cc: pv.ccs[i], v: pv.voicings[i] }));
+  }
   const chips = seq.map((c, i) => chip(c, i, i === 0)).join('<span class="arrow">→</span>');
   const shifts = parallelShifts();
   const ending = b.end === 'resolve'
@@ -353,19 +391,23 @@ function renderDetail() {
       <span class="name" title="${esc(b.name)}">${esc(b.name)}</span>
       <span class="now" id="now" aria-live="polite"></span>
       <span class="cad" title="${esc(b.cadence)}">${esc(b.cadence)}</span>
-      ${seg('guitar', [[false, 'Names'], [true, 'Guitar', 'Show a guitar chord diagram under each chord · MIDI drags are strummed']])}
-      ${state.guitar ? strumPopover() : ''}
+      ${seg('panel', [['names', 'Names'], ['guitar', 'Guitar', 'Show a guitar chord diagram under each chord · MIDI drags are strummed'], ['piano', 'Piano', 'Piano voicings (the piano view’s style and colour) · Play and MIDI are comped']])}
+      ${state.panel === 'guitar' ? strumPopover() : ''}
+      ${state.panel === 'piano' ? `<select id="pcompsel" class="select pcompsel" aria-label="Comping pattern" title="Comping for Play and MIDI (shared with the piano view)">
+        <option value="auto"${state.comp === 'auto' ? ' selected' : ''}>Comp: auto (${esc(styleComp(state.styleId).name)})</option>
+        ${COMPS.map((x) => `<option value="${x.id}"${state.comp === x.id ? ' selected' : ''}>Comp: ${esc(x.name)}</option>`).join('')}</select>` : ''}
     </div>
     <div class="row">
-      <button class="play" id="play">${playing ? '■ Stop' : '▶ Play'}</button>
+      ${metroButton()}<button class="play" id="play">${playing ? '■ Stop' : '▶ Play'}</button>
       ${chips}${ending}
       <label class="tempo">Tempo <input id="bpm" type="range" min="50" max="180" value="${state.bpm}"> <span id="bpmv">${state.bpm}</span></label>
-      <button class="midi" id="midi" title="${panelStrum() ? `Drag into your DAW: this progression strummed on guitar (${esc(currentStrum().name)})` : 'Drag into your DAW to drop this progression in as MIDI'}">
+      <button class="midi" id="midi" title="${panelStrum() ? `Drag into your DAW: this progression strummed on guitar (${esc(currentStrum().name)})` : state.panel === 'piano' ? `Drag into your DAW: this progression with piano voicings, comped (${esc(pianoComp().name)})` : 'Drag into your DAW to drop this progression in as MIDI'}">
         <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><g fill="currentColor"><circle cx="4" cy="3" r="1.3"/><circle cx="10" cy="3" r="1.3"/><circle cx="4" cy="7" r="1.3"/><circle cx="10" cy="7" r="1.3"/><circle cx="4" cy="11" r="1.3"/><circle cx="10" cy="11" r="1.3"/></g></svg>
         MIDI</button>
     </div>`;
   showNow(nowChord);
-  $('play').onclick = () => (playing ? halt() : playBranch(b));
+  $('play').onclick = () => (playing ? halt() : playBranch(b, playhead));
+  $('detail').querySelector(`.row .chord[data-i="${playhead}"]`)?.classList.add('head');
   wireMidiDrag($('midi'), () => midiFor(b));
   // Each chord chip drags out as a one-bar MIDI clip; a click still plays it.
   $('detail').querySelectorAll('.row .chord').forEach((el) =>
@@ -387,10 +429,17 @@ function renderDetail() {
   };
   head.oncontextmenu = (e) => { if (e.target.closest('#pstrum') && customStrumClick(e, true)) e.preventDefault(); };
   wireStrumInputs('pstrumsel', 'psteps');
+  if ($('pcompsel')) $('pcompsel').onchange = (e) => update({ comp: e.target.value });
   $('bpm').oninput = (e) => { state.bpm = +e.target.value; $('bpmv').textContent = state.bpm; save(); };
   $('detail').querySelector('.row').onclick = (e) => {
     const c = e.target.closest('.chord');
-    if (c) sound(+c.dataset.i >= seq.length ? t : seq[+c.dataset.i]);
+    if (!c) return;
+    // The clicked chord is the playhead: Play starts there; while playing, jump to it.
+    playhead = +c.dataset.i;
+    if (playing) return playBranch(b, playhead, false);
+    $('detail').querySelectorAll('.row .chord.head').forEach((x) => x.classList.remove('head'));
+    c.classList.add('head');
+    sound(+c.dataset.i >= seq.length ? t : seq[+c.dataset.i]);
   };
 }
 
@@ -586,7 +635,8 @@ function midiFor(b) {
   const { style, mode, key } = model.s;
   const modeName = style.id === 'theory' ? mode.name : `${mode.name} ${style.name}`;
   const strum = panelStrum();
-  const name = midiFileName(key.name, modeName, b.name + (strum ? ` (${strum.name} guitar)` : ''));
+  const piano = state.panel === 'piano' ? ` (${pianoComp().name} piano)` : '';
+  const name = midiFileName(key.name, modeName, b.name + (strum ? ` (${strum.name} guitar)` : piano));
   return { name, bytes: chordsMidi(chords, beats, name) };
 }
 
@@ -601,11 +651,12 @@ function chordMidi(c) {
 
 /** The play panel's strumming pattern: with Guitar on and Strum not Off,
  *  the guitar view's pattern (shared setting), else null. */
-const panelStrum = () => (state.guitar && state.pStrum ? currentStrum() : null);
+const panelStrum = () => (state.panel === 'guitar' && state.pStrum ? currentStrum() : null);
 
 /** Strum events for chords in the play panel, or null (piano) when
  *  strumming is off or a chord has no guitar shape. */
 function panelRhythm(chords, beats) {
+  if (state.panel === 'piano') return panelComp(chords, beats);
   const pat = panelStrum();
   const shapes = pat ? chords.map((c) => voicing(c)) : [];
   if (!pat || shapes.some((v) => !v)) return null;
@@ -619,8 +670,9 @@ function chordsMidi(chords, beats, fileName) {
   const events = panelRhythm(chords, beats);
   if (!events) return progressionToMidi(chords, { bpm: state.bpm, beats, name });
   const starts = beats.map((_, i) => beats.slice(0, i).reduce((a, x) => a + x, 0));
-  return notesToMidi(strumNotes(events), {
-    bpm: state.bpm, program: GM_GUITAR, name,
+  const piano = state.panel === 'piano';
+  return notesToMidi(piano ? compMidiNotes(events) : strumNotes(events), {
+    bpm: state.bpm, program: piano ? GM_PIANO : GM_GUITAR, name,
     markers: chords.map((c, i) => ({ at: starts[i], text: c.name })),
   });
 }
@@ -712,7 +764,8 @@ function showNow(c) {
 /** Plays one chord and shows its notes until it fades. */
 function sound(c) {
   const v = panelStrum() && voicing(c);
-  if (v) playStrum(voicingMidi(v)); else playChord(c);
+  if (state.panel === 'piano') playNotes(panelVoicings([c]).voicings[0].notes.map((n) => n.midi));
+  else if (v) playStrum(voicingMidi(v)); else playChord(c);
   showNow(c);
   clearTimeout(nowTimer);
   nowTimer = setTimeout(() => { if (!playing) showNow(null); }, 1600);
@@ -728,7 +781,8 @@ function halt() {
   renderDetail();
 }
 
-function playBranch(b) {
+function playBranch(b, startAt = 0, countIn = state.countIn) {
+  if (b.id !== state.selected) playhead = 0;
   state.selected = b.id;
   save();
   playing = true;
@@ -741,8 +795,12 @@ function playBranch(b) {
     const sel = id.startsWith('badge:') ? `#graph .badge[data-badge="${id.slice(6)}"]` : `#graph .node[data-id="${CSS.escape(id)}"]`;
     document.querySelector(sel)?.classList.add('playing');
     document.querySelector(`#detail .chord[data-i="${i}"]`)?.classList.add('playing');
+    if ($('play')) $('play').textContent = '■ Stop';
     showNow(chords[i]);
-  }, halt, panelRhythm(chords, beats));
+  }, () => { playhead = 0; halt(); }, panelRhythm(chords, beats), {
+    countIn, startAt: Math.min(startAt, chords.length - 1),
+    onCount: (n) => { const p = $('play'); if (p) p.textContent = `■ ${n + 1}…`; },
+  });
 }
 
 // ------------------------------------------------------------ sax view
@@ -843,7 +901,7 @@ function renderHorn() {
       </div>
     </div>
     <div class="hplay">
-      <button class="play" id="halong" title="Count-in, then the progression on a loop · Space">${alongPlaying ? '■ Stop' : '▶ Play along'}</button>
+      ${metroButton()}<button class="play" id="halong" title="The progression on a loop, from the chord shown · Space">${alongPlaying ? '■ Stop' : '▶ Play'}</button>
       <button class="mic${micOn() ? ' on' : ''}" id="hmic" title="Tuner: listens to your sax. Nothing is recorded or saved.">${micOn() ? '● Listening' : '🎤 Listen'}</button>
       <div class="hfield inline"><span>Guide-tone line</span>${seg('guideLine', [[false, 'Off'], [true, 'On', 'Play and show a smooth line through each chord’s 3rd and 7th']])}</div>
       <div class="hfield inline"><span>Bars per chord</span>${seg('bars', [[1, '1'], [2, '2']])}</div>
@@ -996,7 +1054,7 @@ function renderStaves(h, p, chord, nm, syl) {
     if (state.folded[s.panel]) return `<div class="staffbox folded">${panelHead(s.panel, s.title)}</div>`;
     const g = layoutStaff({ clef, sig: s.sig, bars: s.bars, labels: rows, noteW: s.strip ? noteW : undefined,
       span: [-3, 12], minWidth: s.minWidth ?? 0 });
-    return `<div class="staffbox">${panelHead(s.panel, s.title, s.panel === 'scale' ? sizes : '')}${staffSvg(g, s.current, s.strip, s.zoom)}</div>`;
+    return `<div class="staffbox">${panelHead(s.panel, s.title, s.panel === 'scale' ? sizes : '')}${staffSvg(g, s.current, s.strip, s.zoom, s.panel === 'lead')}</div>`;
   }).join('');
 }
 
@@ -1175,7 +1233,7 @@ const mod12 = (n) => ((n % 12) + 12) % 12;
 
 /** SVG for a laid-out staff; `current` highlights that bar; `strip` adds a
  *  small fingering chart under each note. */
-function staffSvg(g, current = null, strip = false, zoom = 1) {
+function staffSvg(g, current = null, strip = false, zoom = 1, clickBars = false) {
   const sc = 0.42, stripY = g.height + 4;
   const extra = strip ? DIAGRAM.h * sc + 8 : 0;
   const x0 = 4, x1 = g.width - 2;
@@ -1190,7 +1248,8 @@ function staffSvg(g, current = null, strip = false, zoom = 1) {
   const bars = g.barlines.map((x, i) => (i === g.barlines.length - 1
     ? `<line class="sline" x1="${x - 4}" y1="${topLine}" x2="${x - 4}" y2="${botLine}"/><line class="sline thick" x1="${x}" y1="${topLine}" x2="${x}" y2="${botLine}"/>`
     : `<line class="sline" x1="${x}" y1="${topLine}" x2="${x}" y2="${botLine}"/>`)).join('');
-  const labels = g.barBoxes.map((b) => (b.label ? `<text class="slabel" x="${b.x + 16}" y="${Math.min(14, topLine - 14)}">${esc(b.label)}</text>` : '')).join('');
+  const labels = g.barBoxes.map((b, i) => (b.label ? `<text class="slabel${clickBars ? ' click' : ''}" ${clickBars ? `data-bar="${i}" ` : ''}x="${b.x + 16}" y="${Math.min(14, topLine - 14)}">${esc(b.label)}</text>` : '')).join('');
+  const hits = clickBars ? barHits(g, 0, g.height) : '';
   const notes = g.notes.map((n) => `<g class="snote ${n.cls}" data-m="${n.midi}" data-snd="${n.sound}">
       ${n.ledgers.map((y) => `<line class="sledger" x1="${n.x - 11}" y1="${y}" x2="${n.x + 11}" y2="${y}"/>`).join('')}
       ${n.acc ? `<text class="sacc" x="${n.accX}" y="${n.y}">${n.acc}</text>` : ''}
@@ -1202,7 +1261,7 @@ function staffSvg(g, current = null, strip = false, zoom = 1) {
     return fing ? `<g class="fmini" data-m="${n.midi}" transform="translate(${n.x - (DIAGRAM.w * sc) / 2} ${stripY})">${fingerSvg(fing.keys, { scale: sc })}</g>` : '';
   }).join('') : '';
   const H = g.height + extra;
-  return `<svg class="staff" width="${g.width * zoom}" height="${H * zoom}" viewBox="0 0 ${g.width} ${H}">${hl}${lines}${clef}${sig}${bars}${labels}${notes}${minis}</svg>`;
+  return `<svg class="staff" width="${g.width * zoom}" height="${H * zoom}" viewBox="0 0 ${g.width} ${H}">${hl}${hits}${lines}${clef}${sig}${bars}${labels}${notes}${minis}</svg>`;
 }
 
 /** Shows a note's fingering (displayed MIDI) without re-rendering the rest. */
@@ -1255,6 +1314,8 @@ function wireHorn() {
     if (e.target.closest('#hprint')) return printSheet();
     if (e.target.closest('#hexer')) return exercise ? endExercise(false) : startExercise();
     if (e.target.closest('#halong')) return alongPlaying ? stopHorn() : playAlongNow();
+    const bar = e.target.closest('[data-bar]');
+    if (bar) return hornAt(+bar.dataset.bar);
     const ch = e.target.closest('[data-ci]');
     if (ch?.dataset.scale) {
       // A scale chip: show that scale (switching type if needed).
@@ -1266,6 +1327,7 @@ function wireHorn() {
     }
     if (ch) {
       const i = +ch.dataset.ci;
+      if (alongPlaying && i >= 0 && !ch.classList.contains('hln')) return playAlongNow(i, false);
       if (!alongPlaying) stopHorn();
       hornFocus = i < 0 ? null : i;
       renderFocus();
@@ -1357,8 +1419,19 @@ function playScale() {
   }, stopHorn);
 }
 
-/** Count-in, then the progression on a loop; the grid follows each chord. */
-function playAlongNow() {
+/** A chord of the progression clicked (chip or staff bar): the playhead.
+ *  Playing: jump there at once; else show it and sound it. */
+function hornAt(i) {
+  if (alongPlaying) return playAlongNow(i, false);
+  stopHorn();
+  hornFocus = i;
+  renderFocus();
+  playChord(hornProgression().chords[i]);
+}
+
+/** (Count-in, then) the progression on a loop from the playhead (the shown
+ *  chord); the grid follows each chord. */
+function playAlongNow(startAt = hornFocus ?? 0, countIn = state.countIn) {
   stopHorn();
   const p = hornProgression();
   alongPlaying = true;
@@ -1368,7 +1441,7 @@ function playAlongNow() {
   btn.textContent = '■ Stop';
   playAlong({
     chords: p.chords, beats: alongBeats(p.chords.length), bpm: state.bpm,
-    line: state.guideLine ? p.line.map((n) => n.sound) : null,
+    line: state.guideLine ? p.line.map((n) => n.sound) : null, countIn, startAt,
     onCount: (n) => { btn.textContent = `■ ${n + 1}…`; },
     onStep: (i) => {
       btn.textContent = '■ Stop';
@@ -1390,7 +1463,7 @@ function stopHorn() {
   const b = $('hplay');
   if (b) b.textContent = '▶ Play scale';
   const a = $('halong');
-  if (a) a.textContent = '▶ Play along';
+  if (a) a.textContent = '▶ Play';
 }
 
 // ------------------------------------------------------------ guitar view
@@ -1576,7 +1649,7 @@ function renderGuitar() {
       </div>
     </div>
     <div class="hplay">
-      <button class="play" id="galong" title="Count-in, then the progression on a loop · Space">${gAlong ? '■ Stop' : '▶ Play along'}</button>
+      ${metroButton()}<button class="play" id="galong" title="The progression on a loop, from the chord shown · Space">${gAlong ? '■ Stop' : '▶ Play'}</button>
       <button class="mic" id="gplay" title="Up and down the scale shown">${gPlaying ? '■ Stop' : '▶ Play scale'}</button>
       <div class="hfield inline"><span>Position</span>${seg('gPos', [[0, 'Whole neck'], ...positions.map((x) =>
         [x.n, String(x.n), `Frets ${x.lo}–${x.hi}: ${positions.length === 5 ? 'two' : 'three'} notes per string${x.n === 1 ? ', starting on the root' : ''}`])])}</div>
@@ -1644,13 +1717,13 @@ function guitarStaves(v, p, chord, shape) {
   };
   return [focus, lead].map((s, i) => {
     const g = layoutStaff({ clef, sig: s.sig, bars: s.bars, span });
-    return `<div class="staffbox"><h4>${esc(s.title)}</h4>${tabStaffSvg(g, v.inst.strings.length, i === 1 ? gFocus : null)}</div>`;
+    return `<div class="staffbox"><h4>${esc(s.title)}</h4>${tabStaffSvg(g, v.inst.strings.length, i === 1 ? gFocus : null, i === 1)}</div>`;
   }).join('');
 }
 
 /** A staff (from layoutStaff) with a tab staff under it; notes and fret
  *  numbers carry data-m (sounding MIDI), data-s and data-f (string, fret). */
-function tabStaffSvg(g, n, current) {
+function tabStaffSvg(g, n, current, clickBars = false) {
   const gap = 10, tabTop = g.height + 10, tabH = (n - 1) * gap, H = tabTop + tabH + 10;
   const x0 = 4, x1 = g.width - 2;
   const [topLine, , , , botLine] = g.lines;
@@ -1671,7 +1744,8 @@ function tabStaffSvg(g, n, current) {
     const last = i === g.barlines.length - 1;
     return bar(x, topLine, botLine, last) + bar(x, sy(n - 1), sy(0), last);
   }).join('');
-  const labels = g.barBoxes.map((b) => (b.label ? `<text class="slabel" x="${b.x + 16}" y="${Math.min(14, topLine - 14)}">${esc(b.label)}</text>` : '')).join('');
+  const labels = g.barBoxes.map((b, i) => (b.label ? `<text class="slabel${clickBars ? ' click' : ''}" ${clickBars ? `data-bar="${i}" ` : ''}x="${b.x + 16}" y="${Math.min(14, topLine - 14)}">${esc(b.label)}</text>` : '')).join('');
+  const hits = clickBars ? barHits(g, 0, H) : '';
   const ids = (x) => `data-m="${x.midi}" data-s="${x.string}" data-f="${x.fret}"`;
   const notes = g.notes.map((x) => `<g class="snote ${x.cls}" ${ids(x)}>
       ${x.ledgers.map((y) => `<line class="sledger" x1="${x.x - 11}" y1="${y}" x2="${x.x + 11}" y2="${y}"/>`).join('')}
@@ -1682,7 +1756,7 @@ function tabStaffSvg(g, n, current) {
     const w = x.fret > 9 ? 16 : 11;
     return `<g class="tabn" ${ids(x)}><rect class="tabbg" x="${x.col - w / 2}" y="${sy(x.string) - 6}" width="${w}" height="12"/><text x="${x.col}" y="${sy(x.string)}">${x.fret}</text></g>`;
   }).join('');
-  return `<svg class="staff gstaff" width="${g.width}" height="${H}" viewBox="0 0 ${g.width} ${H}">${hl}${lines}${clef}${tab}${sig}${bars}${labels}${notes}${frets}</svg>`;
+  return `<svg class="staff gstaff" width="${g.width}" height="${H}" viewBox="0 0 ${g.width} ${H}">${hl}${hits}${lines}${clef}${tab}${sig}${bars}${labels}${notes}${frets}</svg>`;
 }
 
 /** The strumming pattern in use: the style's own ("Auto") or the one picked. */
@@ -1815,12 +1889,15 @@ function wireGuitar() {
       else renderGuitar();
       return;
     }
-    const ch = e.target.closest('[data-gi]');
+    const ch = e.target.closest('[data-gi], [data-bar]');
     if (ch) {
+      const i = +(ch.dataset.gi ?? ch.dataset.bar);
+      // Playing: jump there at once; else show and sound it (the playhead).
+      if (gAlong) return playGuitarAlong(i, false);
       if (gPlaying) stopGuitar();
-      gFocus = +ch.dataset.gi;
+      gFocus = i;
       renderGuitar();
-      if (!gAlong) soundGuitarChord(gFocus);
+      soundGuitarChord(gFocus);
       return;
     }
     const alt = e.target.closest('[data-alt]');
@@ -1878,7 +1955,7 @@ function playFretScale() {
 
 /** Count-in, then the progression on a loop: strummed guitar shapes, or on
  *  bass the chords with the root line. The neck follows each chord. */
-function playGuitarAlong() {
+function playGuitarAlong(startAt = gFocus ?? 0, countIn = state.countIn) {
   stopGuitar();
   const p = guitarProgression(), beats = alongBeats(p.chords.length);
   gAlong = true;
@@ -1891,6 +1968,7 @@ function playGuitarAlong() {
       $('gview').querySelector(`.strumbar [data-k="${e.step}"]`)?.classList.add('hit');
     },
     line: p.shapes ? null : p.chords.map(bassRoot),
+    countIn, startAt,
     onCount: (n) => { $('galong').textContent = `■ ${n + 1}…`; },
     onStep: (i) => {
       gFocus = i;
@@ -1908,7 +1986,7 @@ function stopGuitar() {
   const b = $('gplay');
   if (b) b.textContent = '▶ Play scale';
   const a = $('galong');
-  if (a) a.textContent = '▶ Play along';
+  if (a) a.textContent = '▶ Play';
 }
 
 // ------------------------------------------------------------ guitar practice
@@ -2415,6 +2493,7 @@ function update(patch = {}) {
   if (playing) halt();
   if (linePlaying || alongPlaying) stopHorn();
   if (gPlaying || gAlong) stopGuitar();
+  if (pianoBusy()) stopPiano();
   if ('styleId' in patch && patch.styleId !== state.styleId) patch = { ...styleDefaults(patch.styleId), ...patch };
   const keyChanged = ['rootPc', 'modeId', 'modifier', 'styleId'].some((k) => k in patch && patch[k] !== state[k]);
   // Each view's tuner has its own range and handler: switch it off when that changes.
@@ -2422,6 +2501,7 @@ function update(patch = {}) {
   Object.assign(state, patch);
   if (keyChanged) { state.selected = 0; shiftOpen = null; hornFocus = null; gFocus = null; }
   if ('gVoice' in patch || 'gPos' in patch) gAlt = {};
+  resetPiano({ key: keyChanged, voicing: ['pVoicing', 'pExt', 'pAltered', 'pReharm', 'selected'].some((k) => k in patch) });
   // A displayed MIDI number means something else in another pitch or key.
   if (['rootPc', 'modeId', 'instrument', 'pitch'].some((k) => k in patch)) fingerMidi = null;
   // The exercise's notes belong to one key, scale and pitch.
@@ -2451,6 +2531,7 @@ function update(patch = {}) {
   document.body.dataset.view = state.view;
   if (state.view === 'sax') renderHorn();
   if (state.view === 'guitar') renderGuitar();
+  if (state.view === 'piano') renderPianoView();
 }
 
 // Right-click plays a whole progression instead of opening the browser menu.
@@ -2485,6 +2566,7 @@ document.addEventListener('keydown', (e) => {
     }
     if (e.code === 'Space') { e.preventDefault(); if (gQuiz?.answered !== null) nextFretQ(); return; }
   }
+  if (state.view === 'piano') { if (pianoKey(e)) e.preventDefault(); return; }
   if (state.view === 'sax' && state.practice && !e.ctrlKey && !e.altKey && !e.metaKey && quizKey(e)) {
     e.preventDefault();
     return;
@@ -2493,7 +2575,7 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (state.view === 'sax') linePlaying || alongPlaying ? stopHorn() : playAlongNow();
     else if (state.view === 'guitar') gPlaying || gAlong ? stopGuitar() : playGuitarAlong();
-    else playing ? halt() : playBranch(selectedBranch());
+    else playing ? halt() : playBranch(selectedBranch(), playhead);
   }
 });
 

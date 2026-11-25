@@ -129,3 +129,76 @@ export function layoutStaff({ clef: clefId = 'treble', sig = 0, bars, labels = 0
     width, textY, height: textY + labels * 14 + 4,
   };
 }
+
+// ---------------------------------------------------------------- grand staff
+
+/** Piano grand staff: treble (right hand) over bass (left hand), columns
+ *  shared so both hands line up. bars: [{ label?, cols: [{ rh: [notes],
+ *  lh: [notes] }] }], notes low to high (spelled: letter, acc, octave; other
+ *  fields are passed through). Returns both staves' geometry, the notes
+ *  (with `staff`: 't' | 'b', x, y, ledgers, acc), barlines and bar boxes. */
+export function layoutGrand({ sig = 0, bars, noteW = STAFF.noteW, spanT = [-3, 11], spanB = [-3, 10], minWidth = 0, textRoom = 0 }) {
+  const half = STAFF.gap / 2;
+  const T = CLEFS.treble, B = CLEFS.bass;
+  const posT = (n) => stepOf(n.letter, n.octave) - T.bottom;
+  const posB = (n) => stepOf(n.letter, n.octave) - B.bottom;
+  const allT = bars.flatMap((b) => b.cols.flatMap((c) => c.rh.map(posT)));
+  const allB = bars.flatMap((b) => b.cols.flatMap((c) => c.lh.map(posB)));
+  const hiT = Math.max(8, spanT[1], ...allT), loT = Math.min(0, spanT[0], ...allT);
+  const hiB = Math.max(8, spanB[1], ...allB), loB = Math.min(0, spanB[0], ...allB);
+  const topT = 26 + textRoom + (hiT - 8) * half + 6;
+  const yT = (p) => topT + (8 - p) * half;
+  const topB = yT(loT) + 12 + (hiB - 8) * half;
+  const yB = (p) => topB + (8 - p) * half;
+  const bottom = yB(loB) + 8 + textRoom;
+
+  const glyphs = (clef, yOf) => Array.from({ length: Math.abs(sig) }, (_, i) => ({
+    x: 14 + STAFF.clefW + i * STAFF.sigW, y: yOf((sig > 0 ? clef.sharps : clef.flats)[i]), glyph: sig > 0 ? '♯' : '♭',
+  }));
+  const sigGlyphs = [...glyphs(T, yT), ...glyphs(B, yB)];
+  const flat = (hand) => bars.map((b) => b.cols.flatMap((c) => c[hand]));
+  const accT = accidentals(flat('rh'), sig), accB = accidentals(flat('lh'), sig);
+
+  let x = 14 + STAFF.clefW + Math.abs(sig) * STAFF.sigW + 8;
+  const notes = [], barlines = [], barBoxes = [];
+  bars.forEach((b, bi) => {
+    const x0 = x;
+    x += STAFF.barPad;
+    let iT = 0, iB = 0;
+    b.cols.forEach((col, ci) => {
+      const aT = col.rh.map((_, k) => accT[bi][iT + k]), aB = col.lh.map((_, k) => accB[bi][iB + k]);
+      const nAcc = Math.max(aT.filter(Boolean).length, aB.filter(Boolean).length);
+      if (nAcc) x += STAFF.accW * Math.min(2, nAcc);
+      const cx = x + 7;
+      let shifted = false;
+      const place = (list, accs, pos, yOf, staff) => {
+        let prevP = null, prevShift = false, accN = 0;
+        list.forEach((n, k) => {
+          const p = pos(n), acc = accs[k];
+          const shift = prevP !== null && p - prevP === 1 && !prevShift;
+          shifted ||= shift;
+          const ledgers = [];
+          for (let l = -2; l >= p; l -= 2) ledgers.push(yOf(l));
+          for (let l = 10; l <= p; l += 2) ledgers.push(yOf(l));
+          notes.push({ ...n, staff, bar: bi, colIndex: ci, x: cx + (shift ? 13 : 0), col: cx, y: yOf(p), p, acc,
+            accX: cx - 16 - (acc ? accN++ % 2 : 0) * STAFF.accW, ledgers });
+          prevP = p;
+          prevShift = shift;
+        });
+      };
+      place(col.rh, aT, posT, yT, 't');
+      place(col.lh, aB, posB, yB, 'b');
+      iT += col.rh.length;
+      iB += col.lh.length;
+      x += noteW + (shifted ? 13 : 0);
+    });
+    x = Math.max(x, x0 + STAFF.minBar);
+    if (bi === bars.length - 1) x = Math.max(x, minWidth - 4);
+    barBoxes.push({ x: x0, w: x - x0, label: b.label ?? null });
+    barlines.push(x);
+  });
+  return {
+    half, treble: { clef: T, lines: [8, 6, 4, 2, 0].map(yT), yOf: yT }, bass: { clef: B, lines: [8, 6, 4, 2, 0].map(yB), yOf: yB },
+    sigGlyphs, notes, barlines, barBoxes, width: x + 4, height: bottom + 4,
+  };
+}

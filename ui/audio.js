@@ -81,9 +81,14 @@ export function playChord(chord, when = 0, dur = 1.1) {
 }
 
 /** Notes from low to high a few ms apart, like a guitar strum. */
-function strum(notes, when, dur, level = 1) {
+function strum(notes, when, dur, level = 1, spread = 0.022) {
   const gain = (0.13 * level) / Math.sqrt(Math.max(notes.length, 2) / 4);
-  notes.forEach((m, j) => note(m, when + j * 0.022, Math.max(0.1, dur - j * 0.022), gain));
+  notes.forEach((m, j) => note(m, when + j * spread, Math.max(0.1, dur - j * spread), gain));
+}
+
+/** Notes struck together (a piano voicing), as MIDI numbers. */
+export function playNotes(notes, dur = 1.4) {
+  strum(notes, audio().currentTime + 0.02, dur, 1, 0);
 }
 
 /** A strummed chord, given as MIDI notes (e.g. a guitar shape). */
@@ -113,53 +118,65 @@ export function playLine(midis, bpm, onStep, onEnd) {
   const step = 60 / bpm / 2;
   const start = c.currentTime + 0.05;
   midis.forEach((m, i) => {
-    note(m, start + i * step, step * 0.85, 0.18);
+    // A step may be several notes (both hands of a piano scale).
+    for (const x of Array.isArray(m) ? m : [m]) note(x, start + i * step, step * 0.85, Array.isArray(m) ? 0.14 : 0.18);
     timers.push(setTimeout(() => onStep(i), (0.05 + i * step) * 1000));
   });
   timers.push(setTimeout(onEnd, (0.05 + midis.length * step) * 1000 + 300));
 }
 
-/** Backing track: a one-bar count-in, then the chords on a loop until stop().
- *  beats[i]: beats per chord. line: optional MIDI note per chord played on
- *  top (the guide-tone line). onCount(n) fires on each count-in beat,
- *  onStep(i) as chord i sounds. strums: MIDI notes per chord, strummed once
- *  per chord; rhythm: strum events for one pass ({ at, dur in beats, notes,
- *  gain } from strum.js), played instead, onHit(e) firing on each. */
-export function playAlong({ chords, beats, bpm, line = null, strums = null, rhythm = null, onCount, onStep, onHit }) {
+/** Backing track: an optional one-bar count-in, then the chords on a loop
+ *  until stop(). beats[i]: beats per chord. line: optional MIDI note per
+ *  chord played on top (the guide-tone line). onCount(n) fires on each
+ *  count-in beat, onStep(i) as chord i sounds. strums: MIDI notes per chord,
+ *  strummed once per chord; rhythm: strum events for one pass ({ at, dur in
+ *  beats, notes, gain, chord } from strum.js / comp.js), played instead,
+ *  onHit(e) firing on each. countIn: false starts at once. startAt: the
+ *  chord the first pass starts on (the playhead); later passes start at 0. */
+export function playAlong({ chords, beats, bpm, line = null, strums = null, rhythm = null, onCount, onStep, onHit, countIn = true, startAt = 0 }) {
   stop();
   const c = audio();
   const beat = 60 / bpm;
   const ms = (t) => Math.max(0, (t - c.currentTime) * 1000);
   const start = c.currentTime + 0.1;
-  for (let n = 0; n < 4; n++) {
-    click(start + n * beat, n === 0);
-    timers.push(setTimeout(() => onCount?.(n), ms(start + n * beat)));
-  }
-  const total = beats.reduce((a, b) => a + b, 0) * beat;
-  const pass = (from) => {
+  if (countIn) countClicks(start, beat, onCount);
+  const offsets = beats.map((_, i) => beats.slice(0, i).reduce((a, b) => a + b, 0));
+  const total = beats.reduce((a, b) => a + b, 0);
+  const pass = (from, first = 0) => {
     timers = timers.slice(-1024); // fired timers from earlier passes
     center = 62;
-    let t = from;
+    const skip = offsets[first] ?? 0; // beats left out of this pass
     chords.forEach((ch, i) => {
-      const len = beats[i] * beat, at = t;
+      if (i < first) return;
+      const len = beats[i] * beat, at = from + (offsets[i] - skip) * beat;
       if (!rhythm) {
         if (strums) strum(strums[i], at, len * 0.92);
         else playChord(ch, at, len * 0.92);
       }
       if (line) note(line[i], at, len * 0.95, 0.2);
       timers.push(setTimeout(() => onStep(i), ms(at)));
-      t += len;
     });
     // After the chord changes, so onHit at the same moment comes second.
     for (const e of rhythm ?? []) {
-      const at = from + e.at * beat;
-      strum(e.notes, at, e.dur * beat * 0.95, e.gain);
+      if ((e.chord ?? 0) < first || e.at < skip - 1e-9) continue;
+      const at = from + (e.at - skip) * beat;
+      strum(e.notes, at, e.dur * beat * 0.95, e.gain, e.spread ?? 0.022);
       if (onHit) timers.push(setTimeout(() => onHit(e), ms(at)));
     }
     // Schedule the next pass just before this one ends.
-    timers.push(setTimeout(() => pass(from + total), ms(from + total - 0.3)));
+    const end = from + (total - skip) * beat;
+    timers.push(setTimeout(() => pass(end), ms(end - 0.3)));
   };
-  pass(start + 4 * beat);
+  pass(countIn ? start + 4 * beat : start, Math.max(0, Math.min(chords.length - 1, startAt)));
+}
+
+/** Four metronome clicks (the first accented), onCount(n) on each. */
+function countClicks(start, beat, onCount) {
+  const c = audio();
+  for (let n = 0; n < 4; n++) {
+    click(start + n * beat, n === 0);
+    timers.push(setTimeout(() => onCount?.(n), Math.max(0, (start + n * beat - c.currentTime) * 1000)));
+  }
 }
 
 export function stop() {
@@ -173,21 +190,30 @@ export function stop() {
 /** Plays chords in sequence, `beats[i]` beats each; onStep(i) fires as each
  *  one sounds, onEnd() after the last. rhythm: strum events for the whole
  *  sequence ({ at, dur in beats, notes, gain } from strum.js), played
- *  instead of the piano chords. */
-export function playSequence(chords, bpm, beats, onStep, onEnd, rhythm = null) {
+ *  instead of the piano chords. countIn: four clicks first (onCount(n) on
+ *  each); startAt: the chord to start from (the playhead). */
+export function playSequence(chords, bpm, beats, onStep, onEnd, rhythm = null, { countIn = false, startAt = 0, onCount = null } = {}) {
   stop();
   const c = audio();
   const beat = 60 / bpm;
-  const start = c.currentTime + 0.05;
+  const lead = countIn ? 4 * beat : 0;
+  if (countIn) countClicks(c.currentTime + 0.05, beat, onCount);
+  const start = c.currentTime + 0.05 + lead;
   center = 62;
-  for (const e of rhythm ?? []) strum(e.notes, start + e.at * beat, e.dur * beat * 0.95, e.gain);
+  const first = Math.max(0, Math.min(chords.length - 1, startAt));
+  const skip = beats.slice(0, first).reduce((a, b) => a + b, 0);
+  for (const e of rhythm ?? []) {
+    if ((e.chord ?? 0) < first || e.at < skip - 1e-9) continue;
+    strum(e.notes, start + (e.at - skip) * beat, e.dur * beat * 0.95, e.gain, e.spread ?? 0.022);
+  }
   let at = 0;
   chords.forEach((ch, i) => {
+    if (i < first) return;
     const len = beats[i] * beat;
     if (!rhythm) playChord(ch, start + at, len * 0.92);
     const t = at;
-    timers.push(setTimeout(() => onStep(i), (0.05 + t) * 1000));
+    timers.push(setTimeout(() => onStep(i), (0.05 + lead + t) * 1000));
     at += len;
   });
-  timers.push(setTimeout(onEnd, (0.05 + at) * 1000 + 200));
+  timers.push(setTimeout(onEnd, (0.05 + lead + at) * 1000 + 200));
 }

@@ -882,3 +882,96 @@ body[data-view="guitar"] .gview { display: grid; }
 .gtuner { width: 210px; }
 .gtuner .tnote small { font-size: 14px; color: var(--dim); font-weight: 500; }
 .gview .mic.on { border-color: var(--bad); color: var(--bad-text); background: var(--bad-bg); }
+
+/* ---------- piano view */
+.pbar { display: none; align-items: center; gap: 10px; flex: none; }
+body[data-view="piano"] .pbar { display: flex; }
+.pbar .select { width: auto; min-width: 100px; }
+body[data-view="piano"] .title p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body[data-view="guitar"] .pview { display: none; }
+body[data-view="piano"] .canvas,
+body[data-view="piano"] .detail,
+body[data-view="piano"] .legend { display: none; }
+body[data-view="piano"] .pview { display: flex; flex-direction: column; }
+.pview > * { flex: none; }
+/* The keyboard: full width, pinned to the bottom of the view. */
+.pview .keybox {
+  position: sticky; bottom: -16px; z-index: 5; overflow-x: auto; min-width: 0; margin-top: auto !important;
+  margin: 0 -18px -16px; padding: 6px 18px 12px; background: var(--bg); border-top: 1px solid var(--border);
+}
+.keys { display: block; width: 100%; min-width: 760px; height: auto; }
+.pmid { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; min-width: 0; }
+.pmid .gstaves { flex: 1; min-width: 0; }
+.keys .pkey { cursor: pointer; }
+/* Piano key colours are literal (like the side panel's root piano). */
+.keys .pk.w { fill: #f4f5f8; stroke: #8a8f9c; stroke-width: 1; }
+.keys .pk.b { fill: #22252c; stroke: #0c0d10; stroke-width: 1; }
+.keys .pkey:hover .pk.w { fill: #e3e6ee; }
+.keys .pkey:hover .pk.b { fill: #3a3f4b; }
+.keys .pk.vR { fill: var(--accent); }
+.keys .pk.vL { fill: var(--blue); }
+.keys .pk.vB { fill: var(--line); }
+.keys .pk.held { stroke: var(--guide); stroke-width: 3; }
+.keys .pk.w.held:not(.vR):not(.vL):not(.vB) { fill: var(--good-bg); }
+.keys .pk.same { stroke: var(--text); stroke-width: 2.5; }
+.keys .pkey.playing .pk { fill: var(--accent-soft); }
+.keys text { text-anchor: middle; dominant-baseline: central; pointer-events: none; font-size: 9.5px; }
+.keys .pc { fill: var(--faint); font-size: 10px; }
+.keys .pdot circle { fill: var(--node); stroke: var(--border-strong); stroke-width: 1.2; }
+.keys .pdot text { fill: var(--text); font-weight: 600; }
+.keys .pdot.tonic circle { fill: var(--accent); stroke: var(--accent); }
+.keys .pdot.tonic text { fill: var(--on-accent); }
+.keys .pdot.blue circle { fill: var(--blue-bg); stroke: var(--blue); }
+.keys .pdot.tone circle { fill: var(--tone-bg-2); stroke: var(--tone-line); }
+.keys .pdot.pass circle { fill: var(--surface); stroke: var(--border-hi); }
+.keys .pdot.pass text { fill: var(--faint); }
+.keys .pdot.avoid circle { fill: var(--bad-bg); stroke: var(--bad); stroke-dasharray: 2 2; }
+.keys .pdot.avoid text { fill: var(--bad-text); }
+.keys .pdot.fing circle { stroke: var(--accent); stroke-width: 2; }
+.keys .plbl { fill: var(--on-accent); font-weight: 700; }
+.keys .pfing { fill: var(--on-accent); font-weight: 800; font-size: 11px; }
+.pcard { width: 168px; height: auto; min-height: 150px; }
+.pcard .pform { color: var(--dim); font-size: 11.5px; text-align: center; }
+.pcard .phand { font-size: 12px; color: var(--text); width: 100%; line-height: 1.6; }
+.pcard .phand span { color: var(--faint); font-size: 10px; font-weight: 700; margin-right: 2px; }
+.pcard .phand sub { color: var(--faint); font-size: 9px; margin-left: 1px; }
+.pcard .phand i { font-style: normal; color: var(--accent); font-size: 9px; font-weight: 700; vertical-align: super; margin-left: 1px; }
+.pcard .pwarn { color: var(--bad-text); }
+.pcard .ghint { margin-top: 40px; }
+.pheld { min-height: 20px; font-size: 13px; color: var(--dim); margin-bottom: 4px; }
+.pheld b { color: var(--text); }
+.pheld .pchord { color: var(--accent); font-weight: 700; font-size: 15px; }
+.pheld .hint, .pview .hint { color: var(--faint); }
+.hchord.reharm { border-style: dotted; border-color: var(--line); }
+.hchord.short b { font-size: 12.5px; }
+.gview .gkey .sw { display: inline-block; width: 13px; height: 13px; border-radius: calc(3px * var(--rk)); }
+.sw.vR { background: var(--accent); } .sw.vL { background: var(--blue); } .sw.vB { background: var(--line); }
+.gkey .k-avoid { fill: var(--bad-bg); stroke: var(--bad); stroke-dasharray: 2 2; }
+.gstaff .sbrace { fill: none; stroke: var(--dim); stroke-width: 1.6; }
+.gstaff .sfing { fill: var(--accent); font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+.gstaff .snote.lh .shead { stroke: var(--blue); }
+.gstaff .snote.rh .shead { stroke: var(--accent); }
+.gstaff .snote.bs .shead { stroke: var(--line); }
+.pview .quiz { max-width: none; }
+/* Play panel: Piano toggle */
+.detail .chord.pno { gap: 3px; }
+.minikeys { display: block; margin: 2px auto 0; }
+.minikeys .mk.w { fill: #f4f5f8; stroke: #8a8f9c; stroke-width: .5; }
+.minikeys .mk.b { fill: #22252c; }
+.minikeys .mk.vR { fill: var(--accent); } .minikeys .mk.vL { fill: var(--blue); } .minikeys .mk.vB { fill: var(--line); }
+.pcompsel { width: auto; min-width: 0; padding-top: 3px; padding-bottom: 3px; font-size: 12px; }
+
+/* Count-in toggle next to Play / Play along (metronome) */
+.metro {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; margin-right: -6px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--faint); border-radius: var(--pill);
+}
+.metro:hover { color: var(--text); border-color: var(--border-strong); }
+.metro.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-bg); }
+/* Progression staves: click a bar or its chord name to hear it / play from there. */
+.staff .sbarhit { fill: transparent; cursor: pointer; }
+.staff .sbarhit:hover { fill: var(--accent-bg); }
+.staff .slabel.click { cursor: pointer; }
+.staff .slabel.click:hover { fill: var(--accent); }
+.detail .chord.head { box-shadow: 0 0 0 2px var(--accent-line); }
+.staff .sline, .staff .sclef, .staff .sbar-on, .staff .stab, .staff .s8, .staff .sbrace { pointer-events: none; }

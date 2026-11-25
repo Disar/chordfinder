@@ -15,8 +15,8 @@
 - **Root chord options**: 7ths, sus, add9, power chords and more
 - **Borrowed chords** from parallel modes, dashed in the map
 - **Parallel mode shift**: preview and jump to C minor from C major
-- **Listen**: click a chord, right-click a progression, Space to play
-- **Guitar diagrams** under each chord, optionally strummed (pattern picker or Off)
+- **Listen**: click a chord, right-click a progression, Space to play; count-in on or off, start from any chord
+- **Guitar diagrams or piano voicings** under each chord, strummed or comped
 - **MIDI drag-out**: whole progression, or a single chord as a one-bar clip
 - **Phrase or loop** length
 - **8 themes**, rounded or boxy corners
@@ -47,6 +47,19 @@
 - Staff and tab
 - Strumming patterns, or your own, as MIDI
 - Note drills and a string tuner
+
+### Piano view
+
+![The piano view in a jazz ii–V–I with Dm9 as a rootless voicing: card with fingering, grand staff, and the full-width keyboard with the voicing and chord-scale](docs/piano-view.png)
+
+- Full-width keyboard (61, 76 or 88 keys) with scales and their traditional fingerings
+- Extended chords from the chord-scale (9, 11, 13), avoid notes marked, altered dominants
+- Voicings: close, shell, rootless A/B, drop 2, drop 3, spread, quartal, upper structures, voice-led
+- Reharmonisation: secondary dominants, ii–Vs, tritone subs, passing diminished, backdoor
+- Comping patterns (Charleston, bossa, stride, boogie …) on play-along and as MIDI
+- Grand staff with fingering
+- MIDI keyboard or computer-key input that names the chord you hold
+- Drills: play a chord, hear its quality or inversion, name a voicing
 
 ## Download
 

@@ -17,15 +17,20 @@ the release `.exe`.
 | `ui/guitar.js` | Pure: chord voicings (`OPEN_SHAPES` first, else a movable-shape search: `voicing`, `shapeText`, `baseFret`) and the guitar view: neck (`FRETTED` instruments, `fretboardView` with optional chord focus, `scaleRun`), `alternates` (≤ 6 shapes up the neck), `voiceLead`, `movement`, `scalePositions`, `shapeInPosition`; staff/tab notes (`WRITTEN` = +12, `positionTab`, `shapeTab`, `bassArpeggio`, `placeNote`) |
 | `ui/strum.js` | Pure: strumming patterns (`STRUMS`, one bar of 8/16 steps: D U x - 1–6), `STYLE_STRUM` (Auto per style), `strumBar` / `strumProgression` (timed events), `strumNotes` (for MIDI) |
 | `ui/fingering.js` | Pure: `KEYS` (ids + names), `LAYOUTS` (diagram geometry per layout: schematic / chart / body; `shapeBox` for tests), `fingeringsFor(writtenMidi)` (standard + common alternates) |
+| `ui/piano.js` | Pure: piano view — `PIANO_SIZES`, `keyboardView`, `scaleFingering` (thumb-group search), `scaleRun`, `colorChord` (extensions / altered from the chord-scale, avoid notes, chord symbol), `VOICINGS` + `voicingsFor`, `voiceLead`, `chordFingers`, `identifyChord` / `readInKey` (`TEMPLATES`) |
+| `ui/reharm.js` | Pure: `REHARMS`, `reharmonize()` (items with `len` in chord slots, `tag`, `why`), `reharmBeats`, `tokenFor` |
+| `ui/comp.js` | Pure: piano comping — `COMPS` (one bar of hits on voicing parts), `STYLE_COMP`, `compBar` / `compProgression` (events with `spread: 0`), `compNotes` |
+| `ui/pianoquiz.js` | Pure: piano drills (`PIANO_DRILLS` play / quality / inversion / read, `makePianoQuestion`, `playedRight`) |
+| `ui/pianoview.js` | DOM for the piano view (`initPiano(ctx)` gets app.js helpers), Web MIDI + computer-key input, play panel helpers (`panelVoicings`, `panelComp`, `miniKeys`) |
 | `ui/pitch.js`, `ui/mic.js`, `ui/mic-worklet.js` | Tuner: pure YIN pitch detection + note tracker; mic capture via AudioWorklet (nothing recorded); `startMic({ size })` sets the analysis block (2048; 4096 for bass, since the lowest pitch found is about rate / (size / 2)) |
 | `ui/quiz.js` | Pure: practice drills (`DRILLS`, `makeQuestion`, cadence, resolution, scoring) |
 | `ui/fretquiz.js` | Pure: guitar-view drills (`FRET_DRILLS` find/name, `FRET_LEVELS`, `makeFretQuestion`, `isFretRight`) and `nearestString` for the string tuner |
-| `ui/staff.js` | Pure: staff notation — `CLEFS`, `keySignature` (mode → parent signature), `accidentals` (carried per bar), `layoutStaff()` pixel geometry (notes with `stack: true` join the previous note's chord column; `col` = column x); app.js `staffSvg` / `tabStaffSvg` draw it |
+| `ui/staff.js` | Pure: staff notation — `CLEFS`, `keySignature` (mode → parent signature), `accidentals` (carried per bar), `layoutStaff()` pixel geometry (notes with `stack: true` join the previous note's chord column; `col` = column x); app.js `staffSvg` / `tabStaffSvg` draw it; `layoutGrand()` = piano grand staff (columns of `{ rh, lh }` shared by both staves; pianoview.js `grandSvg`) |
 | `ui/audio.js` | Web Audio synth (uses `voiceChord` from midi.js); `playNote`/`playLine` for single notes, `playAlong` backing loop with count-in |
 | `ui/app.js` | DOM: side panel, SVG rendering, focus/hover, play panel, playback, MIDI drag, persisted state |
 | `ui/index.html`, `ui/style.css` | Markup and styles; colour tokens in `:root` |
 | `src/main.rs` | Window setup, Windows 11 title-bar colours (DWM), `drag_midi` command |
-| `tests/*.test.js` | `node --test` suites for theory, graph, MIDI, styles, horn (sax view), staff, fingering, guitar, strum, fretquiz, pitch and quiz |
+| `tests/*.test.js` | `node --test` suites for theory, graph, MIDI, styles, horn (sax view), staff, fingering, guitar, strum, fretquiz, pitch, quiz and piano (fingering, voicings, reharm, comping, grand staff, recognition, drills) |
 | `scripts/make-icon.js` | Renders `icons/icon.ico`, `icon.icns` (macOS, artwork inset to 824/1024), `icon.png`, Linux PNG sizes and `drag.png` with no deps |
 | `.github/workflows/build.yml` | CI: tests, then Windows (NSIS + portable zip), macOS universal `.dmg`, Linux AppImage/`.deb`; tag `vX.Y.Z` → draft release |
 
@@ -117,6 +122,22 @@ npm run icon             # regenerate icons
 - Copy style: the user prefers concise UI text; chord names use ♭/♯ in the UI
   and ASCII (`Eb`, `F#dim`, `Bm7b5`) in MIDI files.
 
+## Playback: count-in and playhead (every view)
+
+- `state.countIn` (default on), toggled by the metronome button
+  (`metroButton()` in app.js, passed to pianoview via ctx) left of every
+  Play button (the loop buttons were renamed from Play along to Play); one document-level click listener on `[data-countin]`.
+  audio.js `playAlong({ countIn, startAt })` and `playSequence(…, rhythm,
+  { countIn, startAt, onCount })`: `startAt` = the chord the first pass
+  starts on (rhythm events are skipped by their `chord` index).
+- Playhead = the focused chord (`hornFocus` / `gFocus` / `pFocus`; on the
+  Chords page the module `playhead`, reset per branch and when a play ends).
+  Play along starts from it. Clicking a chord chip or a progression-staff
+  bar (`barHits()` rects with `data-bar`, and the chord name above it)
+  sounds the chord there, or, while playing, jumps there at once (no
+  count-in). Staff lines etc. have `pointer-events: none` so the bar rects
+  get the click; note heads keep their own click.
+
 ## Guitar view (overview for beginners, built in phases)
 
 Goal: a concise, general overview of the neck, not a full method. Same
@@ -198,7 +219,7 @@ panel, every mode selectable, controls in the header (`#gbar`: instrument
   practice mode changes (`micReset`). Tested with an oscillator stream:
   111 Hz → A string +16¢; bass 41.5 Hz → E string +12¢.
 
-- **Guitar diagrams** (play panel, `state.guitar`, Names | Guitar toggle in
+- **Guitar diagrams** (play panel, `state.panel === 'guitar'`, Names | Guitar | Piano toggle in
   its header): one small chord box per chord (`chordBox` in app.js), chord
   name shrinks above it. Voicings: root in the bass on the E/A/D string,
   only chord tones (5th may drop from 4+ note chords), ≤ 4 fingers, barre
@@ -219,6 +240,48 @@ panel, every mode selectable, controls in the header (`#gbar`: instrument
   (`chordMidi`; `wireMidiDrag(el, build, { click: false })` keeps click =
   play; nodes use `pick` on `#canvas`, since SVG elements can't be HTML5
   `draggable` in the browser fallback).
+
+## Piano view (beginners and advanced players)
+
+From this view on the app also targets advanced players (jazz harmony,
+voicings, reharmonisation). Same pattern as the other views: **Chords | Sax
+| Guitar | Piano**, controls in `#pbar` (Explore | Practice, keyboard size,
+⌨ Keys, 🎹 MIDI, Options ▾), scale chips shared (`state.hornScale`). The
+keyboard sits at the bottom of the view, full width (sticky `.keybox`; the
+view is a flex column) — the user asked for that.
+
+- Scale fingering (`scaleFingering`): two thumbs per octave, groups of 2–4
+  notes; thumbs on white keys, preferring the tonic and the 4th (RH) / 5th
+  (LH) degree and the white key right after a black key in the direction the
+  thumb passes under. Reproduces the traditional tables for all 12 major and
+  harmonic minor scales (tests); RH 4th-finger rule checked against the
+  cs.miami.edu fingering chart. Pentatonics/blues may need a thumb on black.
+- Colour (`state.pExt`: as written / 7ths / 9ths / 11·13): extensions come
+  from the chord-scale (`chordLayer`); a tension a half step above a chord
+  tone is an avoid note (except ♭9 / ♭13 on dominants). Altered dominants
+  (`state.pAltered`): 7♭9 at 9ths, 7alt (3 ♭7 ♯9 ♭13, no 5th) at 11·13. New
+  chord types live in piano.js only — adding them to theory.js `QUALITIES`
+  breaks the guitar test that every quality has a guitar shape.
+- Voicings (`state.pVoicing`): each style implies a minimum colour
+  (`effectiveExt`, e.g. rootless → 9ths). `voiceLead` = DP over candidates
+  (motion of the upper notes + top voice + register pull); ◀ ▶ overrides in
+  module `pAlt`. Bass root E2–D♯3 (rootless: an octave lower, hand 'B').
+- Reharm (`state.pReharm`, toggles) only changes the piano view: items carry
+  `len` (½, ¼ of a slot); inserted chords are built with `buildChord` tokens
+  (`V7/vi`, `iiø7/vi`, `bII7`, `#i°7`), dotted chips.
+- Comping (`state.comp`, 'auto' = `STYLE_COMP`): shared with the play
+  panel's Piano toggle (`state.panel` = names | guitar | piano; old saved
+  `guitar` boolean migrates in `loadSaved`). audio.js events take
+  `spread` (0 = struck together).
+- Input: Web MIDI (`navigator.requestMIDIAccess`, untested with a real
+  device / in WebView2) and computer keys (A W S E D … = C C♯ D …, Z / X
+  octave); held notes are named with `identifyChord` + `readInKey`.
+- Practice (`state.pPractice`): drills in pianoquiz.js, scores in
+  `chordfinder:quiz` under `p<drill>:<level>`; Play-the-chord accepts any
+  inversion/octave (5th optional on 7ths; root optional on Extended).
+- Testing without the browser pane: headless Edge with
+  `--remote-debugging-port` driven over the DevTools protocol (Node's
+  built-in WebSocket) against `py -m http.server` on `ui/`.
 
 ## Sax view (educational, built in phases)
 
