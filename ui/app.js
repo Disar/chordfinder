@@ -398,7 +398,7 @@ function renderDetail() {
         ${COMPS.map((x) => `<option value="${x.id}"${state.comp === x.id ? ' selected' : ''}>Comp: ${esc(x.name)}</option>`).join('')}</select>` : ''}
     </div>
     <div class="row">
-      ${metroButton()}<button class="play" id="play">${playing ? '■ Stop' : '▶ Play'}</button>
+      <button class="play" id="play">${playing ? '■ Stop' : '▶ Play'}</button>
       ${chips}${ending}
       <label class="tempo">Tempo <input id="bpm" type="range" min="50" max="180" value="${state.bpm}"> <span id="bpmv">${state.bpm}</span></label>
       <button class="midi" id="midi" title="${panelStrum() ? `Drag into your DAW: this progression strummed on guitar (${esc(currentStrum().name)})` : state.panel === 'piano' ? `Drag into your DAW: this progression with piano voicings, comped (${esc(pianoComp().name)})` : 'Drag into your DAW to drop this progression in as MIDI'}">
@@ -781,7 +781,7 @@ function halt() {
   renderDetail();
 }
 
-function playBranch(b, startAt = 0, countIn = state.countIn) {
+function playBranch(b, startAt = 0, countIn = false) {
   if (b.id !== state.selected) playhead = 0;
   state.selected = b.id;
   save();

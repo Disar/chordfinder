@@ -125,8 +125,9 @@ npm run icon             # regenerate icons
 ## Playback: count-in and playhead (every view)
 
 - `state.countIn` (default on), toggled by the metronome button
-  (`metroButton()` in app.js, passed to pianoview via ctx) left of every
-  Play button (the loop buttons were renamed from Play along to Play); one document-level click listener on `[data-countin]`.
+  (`metroButton()` in app.js, passed to pianoview via ctx) left of the
+  sax, guitar and piano views' Play button (renamed from Play along); the
+  Chords page has none and plays at once; one document-level click listener on `[data-countin]`.
   audio.js `playAlong({ countIn, startAt })` and `playSequence(…, rhythm,
   { countIn, startAt, onCount })`: `startAt` = the chord the first pass
   starts on (rhythm events are skipped by their `chord` index).
