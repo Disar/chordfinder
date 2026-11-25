@@ -78,6 +78,13 @@ test('a progression repeats the bar for each chord’s length', () => {
   assert.ok(notes[1].at > notes[0].at);
 });
 
+test('a 2-beat chord strums the first half of the bar', () => {
+  const ev = strumProgression(strumById('quarters'), [C, C], [2, 2]);
+  assert.deepEqual(ev.map((e) => e.at), [0, 1, 2, 3]);
+  assert.deepEqual(ev.map((e) => e.chord), [0, 0, 1, 1]);
+  assert.ok(ev.every((e) => e.at + e.dur <= (e.chord + 1) * 2 + 1e-9));
+});
+
 test('strummed MIDI is a valid single-track file', () => {
   const ev = strumProgression(strumById('folk'), [C], [4]);
   const bytes = notesToMidi(strumNotes(ev), { bpm: 100, markers: [{ at: 0, text: 'C' }] });

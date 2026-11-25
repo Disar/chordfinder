@@ -88,14 +88,19 @@ export function strumBar(pattern, notes) {
 }
 
 /** The events for a whole progression, one pass: each chord repeats the
- *  bar for its length (beats[i], a multiple of 4). `at` counts from the
- *  start; `chord` is the chord index. */
+ *  bar for its length (beats[i]); a length that isn't a whole number of
+ *  bars cuts the last bar short (2 beats = its first half). `at` counts
+ *  from the start; `chord` is the chord index. */
 export function strumProgression(pattern, shapes, beats) {
   const out = [];
   let t = 0;
   shapes.forEach((notes, chord) => {
-    for (let bar = 0; bar < beats[chord] / 4; bar++) {
-      for (const e of strumBar(pattern, notes)) out.push({ ...e, at: t + bar * 4 + e.at, chord });
+    const len = beats[chord];
+    for (let bar = 0; bar * 4 < len; bar++) {
+      for (const e of strumBar(pattern, notes)) {
+        const at = bar * 4 + e.at;
+        if (at < len) out.push({ ...e, at: t + at, dur: Math.min(e.dur, len - at), chord });
+      }
     }
     t += beats[chord];
   });

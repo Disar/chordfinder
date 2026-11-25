@@ -171,17 +171,20 @@ export function stop() {
 }
 
 /** Plays chords in sequence, `beats[i]` beats each; onStep(i) fires as each
- *  one sounds, onEnd() after the last. */
-export function playSequence(chords, bpm, beats, onStep, onEnd) {
+ *  one sounds, onEnd() after the last. rhythm: strum events for the whole
+ *  sequence ({ at, dur in beats, notes, gain } from strum.js), played
+ *  instead of the piano chords. */
+export function playSequence(chords, bpm, beats, onStep, onEnd, rhythm = null) {
   stop();
   const c = audio();
   const beat = 60 / bpm;
   const start = c.currentTime + 0.05;
   center = 62;
+  for (const e of rhythm ?? []) strum(e.notes, start + e.at * beat, e.dur * beat * 0.95, e.gain);
   let at = 0;
   chords.forEach((ch, i) => {
     const len = beats[i] * beat;
-    playChord(ch, start + at, len * 0.92);
+    if (!rhythm) playChord(ch, start + at, len * 0.92);
     const t = at;
     timers.push(setTimeout(() => onStep(i), (0.05 + t) * 1000));
     at += len;

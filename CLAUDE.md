@@ -204,8 +204,21 @@ panel, every mode selectable, controls in the header (`#gbar`: instrument
   only chord tones (5th may drop from 4+ note chords), ≤ 4 fingers, barre
   only when > 4 strings are fretted, one muted string only right above the
   bass. The search allows no open strings — it found odd shapes (B as
-  x21402) — so open chords come from `OPEN_SHAPES`. Playback/MIDI still use
-  the piano voicings. A guitar page is a possible later step.
+  x21402) — so open chords come from `OPEN_SHAPES`. With Guitar on and Strum not Off
+  (`state.pStrum`, the panel's own on/off; `panelStrum()` /
+  `panelRhythm()`), Play, shift previews, chord clicks (one strum) and
+  MIDI (`chordsMidi`) all strum the shapes with the guitar view's pattern
+  (`currentStrum()`, GM steel guitar; 2-beat phrase chords get half a
+  bar; `playSequence(..., rhythm)` in audio.js). Off = piano chords.
+  With Guitar on, a `Strum: … ▾` button in the panel header opens an
+  upward popover (`strumPopover`, `strumOpen`): Off + picker + strip + custom
+  editor, the same `state.strum` as the guitar view (`strumOptions`,
+  `wireStrumInputs`, `customStrumControls(id)` are shared). The header is
+  one line: name and cadence shorten with an ellipsis.
+  Each chord chip and graph node also drags out as a one-bar clip
+  (`chordMidi`; `wireMidiDrag(el, build, { click: false })` keeps click =
+  play; nodes use `pick` on `#canvas`, since SVG elements can't be HTML5
+  `draggable` in the browser fallback).
 
 ## Sax view (educational, built in phases)
 
@@ -226,6 +239,12 @@ phase, so build one phase at a time and check back.
   stays marked (`.sel`) while a chord is focused. 🖨 Practice sheet sits in
   the play row. Goal: no control rows above the content — save vertical
   space. Segmented controls anywhere go through `segClick`.
+- **Panel folding / size**: the Scale, Progression and Fingering boxes
+  fold by clicking their title (`panelHead`, `state.folded[id]`); the scale
+  staff and fingering panel have S M L sizes (`sizeSeg`, `state.scaleSize`
+  / `fingerSize` → `SCALE_SIZES`: zoom on the staff SVG; CSS `zoom` on
+  `.fmain` via `--fz`, box width grows with it so it stays fixed per step).
+  Both re-render only the focus, so playback keeps going.
 - **Layout stability**: boxes must not resize as content changes (hovering
   notes updates the fingering panel; a resize moved the grid under the
   mouse). The fingering panel has a fixed size; staves use `layoutStaff`'s

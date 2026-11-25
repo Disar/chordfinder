@@ -22,8 +22,8 @@ Pick a key and a mode, and Chordfinder draws a map of progressions that start on
 - **Borrowed chords.** Optionally branch every progression with chords borrowed from parallel modes (modal interchange): iv and ♭VI in major, Dorian's IV and harmonic minor's V in minor, the Neapolitan ♭II, and more. Borrowed chords are drawn with dashed borders and named after their source mode.
 - **Triads or 7th chords.** Seventh chords take their 7th from the scale the chord actually comes from, so ♭VII in major becomes ♭VII7.
 - **Listen.** Click a chord to hear it, right-click to play its whole progression, or press Space. The play panel shows each chord's notes as it sounds, with adjustable tempo.
-- **Guitar chord diagrams.** Switch the play panel from **Names** to **Guitar** to see a chord box under every chord: the familiar open shape where there is one, else an easy barre or movable shape.
-- **Drag MIDI into your DAW.** Drag the **⠿ MIDI** button into Ableton, FL Studio, Reaper, Bitwig or any DAW that accepts MIDI files. You get the progression exactly as it plays: same voicings, your tempo, chord names as markers.
+- **Guitar chord diagrams.** Switch the play panel from **Names** to **Guitar** to see a chord box under every chord: the familiar open shape where there is one, else an easy barre or movable shape. Pick a strumming pattern under **Strum ▾** (or make your own) and Play, chord clicks and MIDI are strummed on guitar; **Off** keeps piano chords.
+- **Drag MIDI into your DAW.** Drag the **⠿ MIDI** button into Ableton, FL Studio, Reaper, Bitwig or any DAW that accepts MIDI files. You get the progression exactly as it plays: same voicings, your tempo, chord names as markers. Drag a single chord, from the play panel or the map, to drop in just that chord as a one-bar clip.
 - **Phrases or loops.** Play and export a progression as a phrase (2 beats per chord, ending back on the root) or as a loop (1 bar per chord, padded to exactly 4 or 8 bars) that repeats seamlessly in your DAW.
 - **Easy on your drive.** The dragged MIDI file is a short-lived temporary file that Windows keeps in memory and that is deleted a minute after the drop.
 - **Themes.** Eight colour themes — **Dark**, **Midnight**, **Forest**, **Twilight**, **Light**, **Pastel**, **Sepia** and **Mint** — and a choice of **Rounded** or **Boxy** corners.
@@ -43,6 +43,7 @@ Switch the top bar from **Chords** to **Sax** for a practice view aimed at saxop
 - **Chord tones and chord-scales.** Click a chord in the progression bar to see its chord tones, guide tones (3rd and 7th) and the scale to play over it — borrowed chords show exactly which notes change.
 - **Guide-tone line and play-along.** A smooth guide-tone line through the progression and a looping backing track with count-in to practise it over (Space toggles it).
 - **Staff notation.** The scale or chord arpeggio and the progression as a lead sheet, with the right key signature and clef for your instrument.
+- **Fold and resize.** Click a box's title to fold it away; the scale staff and fingering panel come in S, M and L.
 - **Fingerings.** A fingering diagram for any hovered note (standard plus common alternates) and an optional strip of mini diagrams under the staff. Three chart styles: **Schematic**, a compact **Chart** like a fingering book's, or **Body**, with the keys around an outline of the horn.
 - **Tuner and feedback.** Turn on the microphone to see the note you play, play phrases back by ear, or get feedback while playing along. Nothing is recorded or stored.
 - **Practice mode.** Ear and reading drills — scale degrees after a cadence, chord tones over a chord, reading notes from the staff (answer by name or by playing it) — with levels and scores.
@@ -90,9 +91,11 @@ The builds aren't code-signed, so your system may warn on first launch:
 | Hover a branch | Highlight its full path from the root |
 | **⇄ parallel minor / major** buttons | List the parallel mode's progressions: ▶ previews, right-click ▶ plays yours then that one, click a row to switch |
 | Drag **⠿ MIDI** | Drop the selected progression into your DAW |
+| Drag a chord (play panel or map) | Drop that one chord into your DAW as a one-bar clip |
 | Ctrl + mouse wheel | Zoom the map |
 | **Settings** section | Chord length (2 beats or 1-bar loop), detailed or compact view, theme, rounded or boxy corners |
 | **Names \| Guitar** in the play panel | Show a guitar chord diagram under each chord |
+| **Strum ▾** in the play panel (Guitar on) | Strum Play and MIDI with a pattern (shared with the guitar view), edit a custom one, or **Off** for piano chords |
 | **Chords \| Sax \| Guitar** switch | Switch between the progression map, the sax view and the guitar view |
 | Sax view: **Explore \| Practice** | Explore scales and chords, or run the practice drills (keys 1–9/0 answer, R replays, Space next) |
 | Sax view: **Options ▾** | Note names, movable do, what to show (staff, grid or both), fingering strip and chart style |

@@ -234,6 +234,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .endbar line.thick { stroke-width: 4; }
 
 .node { cursor: pointer; }
+.node.dragging { cursor: grabbing; opacity: .6; }
 .node rect { fill: var(--node); stroke: var(--border); stroke-width: 1.2; transition: fill .12s; }
 .node:hover rect { fill: var(--node-hover); }
 .node .rn { fill: var(--dim); font-size: 11px; font-weight: 600; }
@@ -277,7 +278,10 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   border-top: 1px solid var(--border); background: var(--surface);
   padding: 12px 22px 14px; display: grid; gap: 9px; min-height: 112px;
 }
-.detail .head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.detail .head { display: flex; align-items: center; gap: 12px; }
+.detail .head > * { flex: none; }
+/* The name and cadence shorten (ellipsis) so the header stays one line. */
+.detail .head > .name, .detail .head > .cad { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .detail .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .detail .mood { font-size: 15px; font-weight: 650; }
 .detail .name { color: var(--dim); }
@@ -295,6 +299,7 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   padding: 4px 10px; display: grid; text-align: center; min-width: 58px;
 }
 .detail .chord:hover { background: var(--node-hover); }
+.detail .chord.dragging { cursor: grabbing; opacity: .6; }
 .detail .chord.root { border-color: var(--accent); }
 .detail .chord.playing { background: var(--accent-bg-2); border-color: var(--accent); }
 .detail .chord b { font-size: 14px; }
@@ -311,6 +316,9 @@ main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .gbox .fr { text-anchor: end; font-size: 7.5px; }
 .detail .chord.playing .gbox .fd { fill: var(--accent); }
 .detail .head .seg button { padding: 2px 9px; font-size: 11px; }
+.detail .pstrum .hoptbtn { padding: 2px 9px; font-size: 11px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail .pstrum .hopts { top: auto; bottom: calc(100% + 8px); justify-items: start; max-width: 420px; }
+.detail .pstrum .select { width: auto; min-width: 170px; }
 .detail .arrow { color: var(--faint); }
 .detail .end { color: var(--faint); font-size: 18px; letter-spacing: -2px; padding: 0 4px; }
 .detail .cont {
@@ -408,6 +416,7 @@ body[data-view="sax"] .horn { display: grid; }
 /* ---------- sax view */
 .horn {
   flex: 1; overflow: auto; align-content: start; gap: 10px; padding: 12px 18px 16px;
+  grid-template-columns: minmax(0, 1fr); /* a wide staff scrolls in its box, not the page */
 }
 .hctl { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-end; }
 .hfield { display: grid; gap: 5px; }
@@ -501,6 +510,23 @@ body[data-view="sax"] .horn { display: grid; }
   padding: 6px 10px 4px; max-width: 100%; overflow-x: auto;
 }
 .staffbox h4 { margin: 0 0 2px; font-size: 11px; font-weight: 600; letter-spacing: .9px; text-transform: uppercase; color: var(--faint); }
+/* Sax boxes: the title folds the box; the scale staff has S M L sizes. */
+.staffbox h4.phead { display: flex; align-items: center; gap: 10px; }
+.pfold {
+  border: 0; background: none; padding: 0; color: inherit; font: inherit; letter-spacing: inherit;
+  text-transform: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+}
+.pfold:hover { color: var(--text); }
+.pfold .caret { display: inline-block; width: 10px; font-size: 10px; }
+.staffbox.folded { padding-bottom: 6px; }
+.staffbox.folded h4 { margin: 0; }
+.fingerbox.folded { width: auto; }
+.psize { display: inline-flex; margin-left: auto; border: 1px solid var(--border); border-radius: var(--pill); overflow: hidden; }
+.psize button {
+  border: 0; background: none; color: var(--faint); font: 600 10px/1 "Segoe UI", sans-serif; padding: 2px 7px; cursor: pointer;
+}
+.psize button:hover { color: var(--text); }
+.psize button.on { background: var(--accent-bg); color: var(--accent); }
 .staff { display: block; }
 .staff .sline { stroke: var(--dim); stroke-width: 1; opacity: .7; }
 .staff .sline.thick { stroke-width: 3.5; }
@@ -614,8 +640,9 @@ body[data-view="sax"] .horn { display: grid; }
 .hmid .hstaves .staffbox:last-child { order: 2; }
 /* Fixed size: hovering notes changes the content, never the box (a box that
    resized would move the grid under the mouse). */
-.fingerbox { flex: none; order: 1; width: 370px; }
-.fmain { display: flex; gap: 14px; align-items: flex-start; height: 240px; overflow: hidden; }
+/* --fz = S M L size step: the content zooms, the box grows by the same amount. */
+.fingerbox { flex: none; order: 1; width: calc(370px + 348px * (var(--fz, 1) - 1)); }
+.fmain { display: flex; gap: 14px; align-items: flex-start; height: 240px; overflow: hidden; zoom: var(--fz, 1); }
 .fdiag { display: block; flex: none; }
 .finfo { display: grid; gap: 3px; width: 220px; align-content: start; padding-top: 4px; }
 .finfo b, .finfo span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

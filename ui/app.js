@@ -54,8 +54,9 @@ const state = Object.assign(
     view: 'chords', instrument: 'alto', pitch: 'written', hornScale: 'mode', names: 'letters', solfa: false, minorDo: 'do',
     bars: 1, guideLine: false, show: 'both', underNames: true, strip: true, fingerLayout: 'schematic',
     practice: false, drill: 'degree', levels: { degree: 0, tone: 0, read: 0 },
+    folded: {}, scaleSize: 1, fingerSize: 1, // collapsed sax boxes (scale / lead / finger); size steps 1–3
     // Guitar view
-    fretInst: 'guitar', fretLabels: 'names', lefty: false, gVoice: 'easy', gPos: 0, strum: 'auto', customStrum: null,
+    fretInst: 'guitar', fretLabels: 'names', lefty: false, gVoice: 'easy', gPos: 0, strum: 'auto', customStrum: null, pStrum: true,
     gPractice: false, gDrill: 'find', gLevels: { find: 0, name: 0 } },
   loadSaved(),
   { v: STATE_VERSION },
@@ -302,6 +303,9 @@ function wireGraph() {
       playBranch(b);
     }
   });
+  // Each chord node drags out as a one-bar MIDI clip (the root as the tonic).
+  wireMidiDrag($('canvas'), (el) => chordMidi(model.tree.nodes.find((x) => x.id === el.dataset.id)?.chord ?? model.s.tonic),
+    { click: false, pick: (t) => t.closest?.('#graph .node') ?? null });
   $('canvas').addEventListener('wheel', (e) => {
     if (!e.ctrlKey) return;
     e.preventDefault();
@@ -329,7 +333,7 @@ function renderDetail() {
   const chip = (c, i, root) => {
     const v = state.guitar && voicing(c);
     const tip = chordTitle(c) + (v ? ` · guitar ${shapeText(v)}` : '');
-    return `<button class="chord${root ? ' root' : ''}${lent(c) ? ' borrowed' : ''}${v ? ' gtr' : ''}" data-i="${i}" title="${esc(tip)}"><b>${esc(c.name)}</b>${v ? chordBox(v) : ''}<small>${esc(c.roman)}</small></button>`;
+    return `<button class="chord${root ? ' root' : ''}${lent(c) ? ' borrowed' : ''}${v ? ' gtr' : ''}" data-i="${i}" title="${esc(tip)} · drag out as MIDI${v && panelStrum() ? ' (strummed)' : ''}"><b>${esc(c.name)}</b>${v ? chordBox(v) : ''}<small>${esc(c.roman)}</small></button>`;
   };
   const chips = seq.map((c, i) => chip(c, i, i === 0)).join('<span class="arrow">→</span>');
   const shifts = parallelShifts();
@@ -346,22 +350,26 @@ function renderDetail() {
     <div class="head">
       <span class="dot" style="background:${color}"></span>
       <span class="mood" style="color:${color}">${b.special ? '★ ' : ''}${b.borrowed ? '⇄ ' : ''}${esc(b.mood)}</span>
-      <span class="name">${esc(b.name)}</span>
+      <span class="name" title="${esc(b.name)}">${esc(b.name)}</span>
       <span class="now" id="now" aria-live="polite"></span>
-      <span class="cad">${esc(b.cadence)}</span>
-      ${seg('guitar', [[false, 'Names'], [true, 'Guitar', 'Show a guitar chord diagram under each chord']])}
+      <span class="cad" title="${esc(b.cadence)}">${esc(b.cadence)}</span>
+      ${seg('guitar', [[false, 'Names'], [true, 'Guitar', 'Show a guitar chord diagram under each chord · MIDI drags are strummed']])}
+      ${state.guitar ? strumPopover() : ''}
     </div>
     <div class="row">
       <button class="play" id="play">${playing ? '■ Stop' : '▶ Play'}</button>
       ${chips}${ending}
       <label class="tempo">Tempo <input id="bpm" type="range" min="50" max="180" value="${state.bpm}"> <span id="bpmv">${state.bpm}</span></label>
-      <button class="midi" id="midi" title="Drag into your DAW to drop this progression in as MIDI">
+      <button class="midi" id="midi" title="${panelStrum() ? `Drag into your DAW: this progression strummed on guitar (${esc(currentStrum().name)})` : 'Drag into your DAW to drop this progression in as MIDI'}">
         <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><g fill="currentColor"><circle cx="4" cy="3" r="1.3"/><circle cx="10" cy="3" r="1.3"/><circle cx="4" cy="7" r="1.3"/><circle cx="10" cy="7" r="1.3"/><circle cx="4" cy="11" r="1.3"/><circle cx="10" cy="11" r="1.3"/></g></svg>
         MIDI</button>
     </div>`;
   showNow(nowChord);
   $('play').onclick = () => (playing ? halt() : playBranch(b));
   wireMidiDrag($('midi'), () => midiFor(b));
+  // Each chord chip drags out as a one-bar MIDI clip; a click still plays it.
+  $('detail').querySelectorAll('.row .chord').forEach((el) =>
+    wireMidiDrag(el, () => chordMidi(+el.dataset.i >= seq.length ? t : seq[+el.dataset.i]), { click: false }));
   const cont = $('cont');
   if (cont) cont.onclick = () => {
     if (b.next.home) return sound(t);
@@ -371,13 +379,46 @@ function renderDetail() {
     focus(null);
   };
   wireShift(shifts);
-  $('detail').querySelector('.head').onclick = segClick;
+  const head = $('detail').querySelector('.head');
+  head.onclick = (e) => {
+    if (e.target.closest('#pstrumbtn')) { strumOpen = !strumOpen; renderDetail(); return; }
+    if (customStrumClick(e)) return;
+    segClick(e);
+  };
+  head.oncontextmenu = (e) => { if (e.target.closest('#pstrum') && customStrumClick(e, true)) e.preventDefault(); };
+  wireStrumInputs('pstrumsel', 'psteps');
   $('bpm').oninput = (e) => { state.bpm = +e.target.value; $('bpmv').textContent = state.bpm; save(); };
   $('detail').querySelector('.row').onclick = (e) => {
     const c = e.target.closest('.chord');
     if (c) sound(+c.dataset.i >= seq.length ? t : seq[+c.dataset.i]);
   };
 }
+
+// Whether the play panel's Strum ▾ popover is open (kept across re-renders).
+let strumOpen = false;
+
+/** Strum ▾ in the play panel header (Guitar on): the guitar view's pattern
+ *  picker, arrow strip and custom editor, opening upwards. Same setting. */
+function strumPopover() {
+  const pat = currentStrum(), custom = state.strum === 'custom', on = state.pStrum;
+  return `<div class="hoptwrap pstrum" id="pstrum">
+    <button class="hoptbtn${strumOpen ? ' open' : ''}" id="pstrumbtn" aria-expanded="${strumOpen}" title="Strumming for Play and MIDI (pattern shared with the guitar view)">Strum: ${esc(!on ? 'Off' : custom ? 'Custom' : pat.name)} ▾</button>
+    <div class="hopts"${strumOpen ? '' : ' hidden'}>
+      <div class="hfield"><span>Pattern</span><select id="pstrumsel" class="select" aria-label="Strumming pattern"><option value="off"${on ? '' : ' selected'}>Off: piano chords</option>${strumOptions(on)}</select></div>
+      ${on ? `${strumStrip(pat, custom)}
+      ${custom ? customStrumControls('psteps') : `<span class="gpattip">${esc(pat.tip)}</span>`}
+      <span class="gpattip">Play, chord clicks and MIDI drags use this pattern.</span>` : '<span class="gpattip">Play and MIDI use piano chords; the diagrams stay.</span>'}
+    </div>
+  </div>`;
+}
+
+document.addEventListener('mousedown', (e) => {
+  if (!strumOpen || e.target.closest('#pstrum')) return;
+  // Hide without re-rendering, so the click under the pointer still lands.
+  strumOpen = false;
+  $('pstrum')?.querySelector('.hopts')?.setAttribute('hidden', '');
+  $('pstrumbtn')?.classList.remove('open');
+});
 
 /** Small guitar chord diagram: strings low E (left) to high E, four frets,
  *  nut or a start-fret number, x / o above muted and open strings. */
@@ -518,7 +559,7 @@ function previewShift(m, b, row, chain = false) {
     // The closing root chord (phrase length) lights up the first chip again.
     else row.querySelector(`.c[data-i="${i - n > b.chords.length ? 0 : i - n}"]`)?.classList.add('playing');
     showNow(chords[i]);
-  }, () => { clear(); showNow(null); });
+  }, () => { clear(); showNow(null); }, panelRhythm(chords, beats));
 }
 
 /** Switches to the parallel mode with the chosen branch selected. */
@@ -544,8 +585,44 @@ function midiFor(b) {
   const { chords, beats } = sequenceFor(b);
   const { style, mode, key } = model.s;
   const modeName = style.id === 'theory' ? mode.name : `${mode.name} ${style.name}`;
-  const name = midiFileName(key.name, modeName, b.name);
-  return { name, bytes: progressionToMidi(chords, { bpm: state.bpm, beats, name: name.replace(/\.mid$/, '') }) };
+  const strum = panelStrum();
+  const name = midiFileName(key.name, modeName, b.name + (strum ? ` (${strum.name} guitar)` : ''));
+  return { name, bytes: chordsMidi(chords, beats, name) };
+}
+
+/** One chord as a one-bar MIDI clip, e.g. "F (IV) - C Ionian.mid". */
+function chordMidi(c) {
+  const { style, mode, key } = model.s;
+  const modeName = style.id === 'theory' ? mode.name : `${mode.name} ${style.name}`;
+  const strum = panelStrum();
+  const name = midiFileName(c.name, `(${c.roman})`, `${key.name} ${modeName}${strum ? ` - ${strum.name} guitar` : ''}`);
+  return { name, bytes: chordsMidi([c], [4], name) };
+}
+
+/** The play panel's strumming pattern: with Guitar on and Strum not Off,
+ *  the guitar view's pattern (shared setting), else null. */
+const panelStrum = () => (state.guitar && state.pStrum ? currentStrum() : null);
+
+/** Strum events for chords in the play panel, or null (piano) when
+ *  strumming is off or a chord has no guitar shape. */
+function panelRhythm(chords, beats) {
+  const pat = panelStrum();
+  const shapes = pat ? chords.map((c) => voicing(c)) : [];
+  if (!pat || shapes.some((v) => !v)) return null;
+  return strumProgression(pat, shapes.map(voicingMidi), beats);
+}
+
+/** Play-panel MIDI: piano chords, or the guitar shapes strummed with the
+ *  panel's pattern (GM steel guitar), the same as Play. */
+function chordsMidi(chords, beats, fileName) {
+  const name = fileName.replace(/\.mid$/, '');
+  const events = panelRhythm(chords, beats);
+  if (!events) return progressionToMidi(chords, { bpm: state.bpm, beats, name });
+  const starts = beats.map((_, i) => beats.slice(0, i).reduce((a, x) => a + x, 0));
+  return notesToMidi(strumNotes(events), {
+    bpm: state.bpm, program: GM_GUITAR, name,
+    markers: chords.map((c, i) => ({ at: starts[i], text: c.name })),
+  });
 }
 
 function flashMidi(btn, text, cls) {
@@ -554,41 +631,49 @@ function flashMidi(btn, text, cls) {
   setTimeout(() => { btn.classList.remove(cls); delete btn.dataset.msg; }, 2200);
 }
 
-/** Makes `btn` drag out the MIDI file that build() returns ({ name, bytes }). */
-function wireMidiDrag(btn, build) {
+/** Makes `btn` drag out the MIDI file that build() returns ({ name, bytes }).
+ *  With click: false its own click is left alone (no "drag me" hint).
+ *  With pick, `btn` is a container: pick(target) finds the item under the
+ *  pointer (or null: no drag) and build(item) makes its file. */
+function wireMidiDrag(btn, build, { click = true, pick = null } = {}) {
   const tauri = window.__TAURI__?.core;
   if (!tauri) {
     // Plain browser: let Chromium drag the file out itself (drops onto the desktop).
-    btn.draggable = true;
+    let item = btn;
+    btn.draggable = !pick;
+    if (pick) btn.onmousedown = (e) => { item = pick(e.target); btn.draggable = !!item; };
     btn.ondragstart = (e) => {
-      const { name, bytes } = build();
+      if (!item) return;
+      const { name, bytes } = build(item);
       const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/midi' }));
       e.dataTransfer.setData('DownloadURL', `audio/midi:${name}:${url}`);
       e.dataTransfer.effectAllowed = 'copy';
     };
-    btn.onclick = () => flashMidi(btn, 'Drag me out', 'hint');
+    if (click) btn.onclick = () => flashMidi(btn, 'Drag me out', 'hint');
     return;
   }
   // Desktop app: once the pointer has moved a few pixels with the button held,
   // hand a real file to the OS drag, which DAWs accept like one from Explorer.
   btn.onmousedown = (e) => {
     if (e.button !== 0) return;
+    const item = pick ? pick(e.target) : btn;
+    if (!item) return;
     e.preventDefault();
     const x0 = e.clientX, y0 = e.clientY;
     const done = () => { removeEventListener('mousemove', move); removeEventListener('mouseup', done); };
     const move = (ev) => {
       if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
       done();
-      const { name, bytes } = build();
-      btn.classList.add('dragging');
+      const { name, bytes } = build(item);
+      item.classList.add('dragging');
       tauri.invoke('drag_midi', { name, bytes: Array.from(bytes) })
-        .catch((err) => { console.error(err); flashMidi(btn, 'Drag failed', 'error'); })
-        .finally(() => btn.classList.remove('dragging'));
+        .catch((err) => { console.error(err); if (!pick) flashMidi(btn, 'Drag failed', 'error'); })
+        .finally(() => item.classList.remove('dragging'));
     };
     addEventListener('mousemove', move);
     addEventListener('mouseup', done);
   };
-  btn.onclick = () => flashMidi(btn, 'Drag me into your DAW', 'hint');
+  if (click) btn.onclick = () => flashMidi(btn, 'Drag me into your DAW', 'hint');
 }
 
 // ------------------------------------------------------------ playback
@@ -626,7 +711,8 @@ function showNow(c) {
 
 /** Plays one chord and shows its notes until it fades. */
 function sound(c) {
-  playChord(c);
+  const v = panelStrum() && voicing(c);
+  if (v) playStrum(voicingMidi(v)); else playChord(c);
   showNow(c);
   clearTimeout(nowTimer);
   nowTimer = setTimeout(() => { if (!playing) showNow(null); }, 1600);
@@ -656,7 +742,7 @@ function playBranch(b) {
     document.querySelector(sel)?.classList.add('playing');
     document.querySelector(`#detail .chord[data-i="${i}"]`)?.classList.add('playing');
     showNow(chords[i]);
-  }, halt);
+  }, halt, panelRhythm(chords, beats));
 }
 
 // ------------------------------------------------------------ sax view
@@ -902,12 +988,29 @@ function renderStaves(h, p, chord, nm, syl) {
   // the boxes keep their size as the scale, chord or key changes.
   const noteW = state.strip ? 48 : STAFF.noteW;
   focus.minWidth = 8 + STAFF.clefW + 7 * STAFF.sigW + 8 + STAFF.barPad + 8 * noteW + 2 * STAFF.accW;
+  focus.panel = 'scale';
+  focus.zoom = SCALE_SIZES[state.scaleSize] ?? 1;
+  lead.panel = 'lead';
+  const sizes = sizeSeg('scaleSize', 'Size of the scale staff');
   $('hstaves').innerHTML = [focus, lead].map((s) => {
+    if (state.folded[s.panel]) return `<div class="staffbox folded">${panelHead(s.panel, s.title)}</div>`;
     const g = layoutStaff({ clef, sig: s.sig, bars: s.bars, labels: rows, noteW: s.strip ? noteW : undefined,
       span: [-3, 12], minWidth: s.minWidth ?? 0 });
-    return `<div class="staffbox"><h4>${esc(s.title)}</h4>${staffSvg(g, s.current, s.strip)}</div>`;
+    return `<div class="staffbox">${panelHead(s.panel, s.title, s.panel === 'scale' ? sizes : '')}${staffSvg(g, s.current, s.strip, s.zoom)}</div>`;
   }).join('');
 }
+
+/** Zoom per size step (S M L) for the scale staff and the fingering panel. */
+const SCALE_SIZES = { 1: 1, 2: 1.3, 3: 1.6 };
+
+/** S M L buttons for a box title, bound to a state key (`scaleSize`, `fingerSize`). */
+const sizeSeg = (key, tip) => `<span class="psize" title="${esc(tip)}">${[1, 2, 3].map((v) =>
+  `<button data-size="${v}" data-key="${key}" class="${state[key] === v ? 'on' : ''}">${'SML'[v - 1]}</button>`).join('')}</span>`;
+
+/** A sax box's title: click folds the box to just this line. */
+const panelHead = (id, title, extra = '') =>
+  `<h4 class="phead"><button class="pfold" data-panel="${id}" title="${state.folded[id] ? 'Show' : 'Hide'} this panel">
+    <span class="caret">${state.folded[id] ? '▸' : '▾'}</span>${esc(title)}</button>${extra}</h4>`;
 
 /** The staves' content (shared by the view and the practice sheet): clef,
  *  rows of text under the notes, the focus staff and the lead sheet. */
@@ -1039,6 +1142,9 @@ function fingerSvg(keys, { scale = 1, full = false } = {}) {
 function renderFinger() {
   const el = $('hfinger');
   if (!el) return;
+  el.classList.toggle('folded', !!state.folded.finger);
+  el.style.setProperty('--fz', SCALE_SIZES[state.fingerSize] ?? 1);
+  if (state.folded.finger) { el.innerHTML = panelHead('finger', 'Fingering'); return; }
   const chord = hornFocus === null ? null : hornProgression().chords[hornFocus];
   const h = hornModel(chord), inst = h.inst, written = state.pitch === 'written';
   const shown = written ? inst.shift : 0;
@@ -1050,7 +1156,7 @@ function renderFinger() {
   const nm = (l, a) => formatNote(l, a, state.names);
   const here = `${nm(cell.letter, cell.acc)}${cell.octave}`, there = `${nm(cell.other.letter, cell.other.acc)}${cell.other.octave}`;
   const reg = REGISTERS.find((r) => r.id === cell.register);
-  el.innerHTML = `<h4>Fingering</h4>
+  el.innerHTML = `${panelHead('finger', 'Fingering', sizeSeg('fingerSize', 'Size of the fingering panel'))}
     <div class="fmain">
       <svg class="fdiag" width="${DIAGRAM.w}" height="${DIAGRAM.h}" viewBox="0 0 ${DIAGRAM.w} ${DIAGRAM.h}">${fingerSvg(main.keys, { full: true })}</svg>
       <div class="finfo">
@@ -1069,7 +1175,7 @@ const mod12 = (n) => ((n % 12) + 12) % 12;
 
 /** SVG for a laid-out staff; `current` highlights that bar; `strip` adds a
  *  small fingering chart under each note. */
-function staffSvg(g, current = null, strip = false) {
+function staffSvg(g, current = null, strip = false, zoom = 1) {
   const sc = 0.42, stripY = g.height + 4;
   const extra = strip ? DIAGRAM.h * sc + 8 : 0;
   const x0 = 4, x1 = g.width - 2;
@@ -1096,7 +1202,7 @@ function staffSvg(g, current = null, strip = false) {
     return fing ? `<g class="fmini" data-m="${n.midi}" transform="translate(${n.x - (DIAGRAM.w * sc) / 2} ${stripY})">${fingerSvg(fing.keys, { scale: sc })}</g>` : '';
   }).join('') : '';
   const H = g.height + extra;
-  return `<svg class="staff" width="${g.width}" height="${H}" viewBox="0 0 ${g.width} ${H}">${hl}${lines}${clef}${sig}${bars}${labels}${notes}${minis}</svg>`;
+  return `<svg class="staff" width="${g.width * zoom}" height="${H * zoom}" viewBox="0 0 ${g.width} ${H}">${hl}${lines}${clef}${sig}${bars}${labels}${notes}${minis}</svg>`;
 }
 
 /** Shows a note's fingering (displayed MIDI) without re-rendering the rest. */
@@ -1135,6 +1241,15 @@ function wireHorn() {
   $('horn').onclick = (e) => {
     if (state.practice && e.target.closest('#hquiz') && wireQuiz(e)) return;
     if (segClick(e)) return;
+    // Panel fold / scale size: layout only, so playback keeps going.
+    const fold = e.target.closest('[data-panel]');
+    if (fold) {
+      state.folded = { ...state.folded, [fold.dataset.panel]: !state.folded[fold.dataset.panel] };
+      save();
+      return renderFocus();
+    }
+    const size = e.target.closest('[data-size]');
+    if (size) { state[size.dataset.key] = +size.dataset.size; save(); return renderFocus(); }
     if (e.target.closest('#hplay')) return linePlaying ? stopHorn() : playScale();
     if (e.target.closest('#hmic')) return micOn() ? micOff() : micStart();
     if (e.target.closest('#hprint')) return printSheet();
@@ -1471,10 +1586,7 @@ function renderGuitar() {
       <label class="tempo">Tempo <input id="gbpm" type="range" min="50" max="180" value="${state.bpm}"> <span id="gbpmv">${state.bpm}</span></label>
     </div>
     ${isGuitar() ? `<div class="hplay gstrumrow">
-      <label class="gpat">Strum <select id="gpattern" class="select" aria-label="Strumming pattern">
-        <option value="auto"${state.strum === 'auto' ? ' selected' : ''}>Auto: ${esc(styleStrum(state.styleId).name)}</option>
-        ${STRUMS.map((x) => `<option value="${x.id}"${state.strum === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}
-        <option value="custom"${state.strum === 'custom' ? ' selected' : ''}>Custom…</option></select></label>
+      <label class="gpat">Strum <select id="gpattern" class="select" aria-label="Strumming pattern">${strumOptions()}</select></label>
       ${strumStrip(currentStrum(), state.strum === 'custom')}
       ${state.strum === 'custom' ? customStrumControls() : `<span class="gpattip">${esc(currentStrum().tip)}</span>`}
       ${midiButton('gmidi', 'Drag into your DAW: this progression strummed with this pattern, one pass (guitar sound)')}
@@ -1486,23 +1598,7 @@ function renderGuitar() {
       <span class="hint">Click a note to hear it · hover to see the same note elsewhere on the neck</span>
     </div>`;
   $('gbpm').oninput = (e) => { state.bpm = +e.target.value; $('gbpmv').textContent = state.bpm; save(); };
-  if ($('gpattern')) $('gpattern').onchange = (e) => {
-    // A first Custom starts from the pattern that was showing.
-    const patch = { strum: e.target.value };
-    if (patch.strum === 'custom' && !state.customStrum) {
-      const c = currentStrum();
-      patch.customStrum = { steps: c.steps, swing: !!c.swing, short: !!c.short };
-    }
-    update(patch);
-  };
-  if ($('gsteps')) {
-    $('gsteps').onchange = (e) => {
-      const steps = cleanSteps(e.target.value);
-      if (steps) editCustomStrum({ steps });
-      else e.target.value = currentStrum().steps;
-    };
-    $('gsteps').onkeydown = (e) => { if (e.key === 'Enter') e.target.blur(); e.stopPropagation(); };
-  }
+  wireStrumInputs('gpattern', 'gsteps');
   if ($('gmidi')) wireMidiDrag($('gmidi'), () => strumMidi(guitarProgression()));
   $('gbranch').onchange = (e) => {
     stopGuitar();
@@ -1604,13 +1700,44 @@ function strumStrip(pat, edit = false) {
     `<span class="sb${i % (n / 4) === 0 ? ' beat' : ''}${ch === '-' ? ' rest' : ''}" data-k="${i}"${edit ? ` data-cs="${i}"` : ''}><b>${STRUM_GLYPH[ch] ?? ch}</b><small>${cnt[i]}</small></span>`).join('')}</span>`;
 }
 
+/** The pattern picker's options: Auto (the style's), the presets, Custom. */
+const strumOptions = (mark = true) => {
+  const sel = (id) => (mark && state.strum === id ? ' selected' : '');
+  return `<option value="auto"${sel('auto')}>Auto: ${esc(styleStrum(state.styleId).name)}</option>
+  ${STRUMS.map((x) => `<option value="${x.id}"${sel(x.id)}>${esc(x.name)}</option>`).join('')}
+  <option value="custom"${sel('custom')}>Custom…</option>`;
+};
+
+/** Wires a pattern picker and (when Custom shows) the steps field by id. */
+function wireStrumInputs(selectId, stepsId) {
+  if ($(selectId)) $(selectId).onchange = (e) => {
+    // The play panel's picker also has Off (its own on/off, pStrum).
+    if (e.target.value === 'off') return update({ pStrum: false });
+    // A first Custom starts from the pattern that was showing.
+    const patch = { strum: e.target.value, ...(selectId === 'pstrumsel' ? { pStrum: true } : {}) };
+    if (patch.strum === 'custom' && !state.customStrum) {
+      const c = currentStrum();
+      patch.customStrum = { steps: c.steps, swing: !!c.swing, short: !!c.short };
+    }
+    update(patch);
+  };
+  if ($(stepsId)) {
+    $(stepsId).onchange = (e) => {
+      const steps = cleanSteps(e.target.value);
+      if (steps) editCustomStrum({ steps });
+      else e.target.value = currentStrum().steps;
+    };
+    $(stepsId).onkeydown = (e) => { if (e.key === 'Enter') e.target.blur(); e.stopPropagation(); };
+  }
+}
+
 /** Custom pattern controls: the steps as text, 8/16 steps, swing, palm mute. */
-function customStrumControls() {
+function customStrumControls(id = 'gsteps') {
   const c = currentStrum();
   const tog = (key, label, title, on, dis = false) =>
     `<button class="gtog${on ? ' on' : ''}" data-ctog="${key}" title="${title}"${dis ? ' disabled' : ''}>${label}</button>`;
   return `<span class="gcustom">
-    <input id="gsteps" class="gsteps" value="${c.steps}" maxlength="16" spellcheck="false" aria-label="Pattern steps"
+    <input id="${id}" class="gsteps" value="${c.steps}" maxlength="16" spellcheck="false" aria-label="Pattern steps"
       title="Type 8 or 16 steps: D down, U up, x chuck, - rest, 1–6 pick one string (1 = lowest)">
     ${tog('len', c.steps.length === 16 ? '16ths' : '8ths', 'Eighths or sixteenths', false)}
     ${tog('swing', 'Swing', 'Swung eighths: long-short (8 steps only)', c.swing, c.steps.length !== 8)}
